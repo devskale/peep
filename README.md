@@ -1,7 +1,7 @@
 # peep 👀 - fast X CLI for tweeting, replying, and reading
 stolen from @steipete/bird, which is now deprecated.
 
-`peep` is a fast X CLI for tweeting, replying, and reading via X/Twitter GraphQL (cookie auth).
+`peep` is a fast X CLI for consuming your feed via X/Twitter GraphQL (cookie auth).
 
 ## Disclaimer
 
@@ -29,9 +29,6 @@ git clone https://github.com/devskale/peep.git
 cd peep
 bun install
 bun run build:binary   # produces ./peep binary
-
-# One-shot with bun (no install)
-bunx github:devskale/peep whoami
 ```
 
 ## Quickstart
