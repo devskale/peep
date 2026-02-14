@@ -2,8 +2,8 @@ name: Release
 
 on:
   push:
-    tags:
-      - 'v*'
+    branches:
+      - main
 
 jobs:
   build:
@@ -51,6 +51,13 @@ jobs:
       contents: write
     
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Get version
+        id: version
+        run: echo "VERSION=$(node -p \"require('./package.json').version\")" >> $GITHUB_OUTPUT
+
       - name: Download peep-darwin
         uses: actions/download-artifact@v4
         with:
@@ -67,7 +74,6 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Get existing release ID if it exists
           RELEASE_ID=$(curl -s -H "Authorization: token $GITHUB_TOKEN" \
             "https://api.github.com/repos/${{ github.repository }}/releases/tags/latest" \
             | jq -r '.id // empty')
@@ -82,7 +88,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: latest
-          name: Latest Release
+          name: Latest Release v${{ steps.version.outputs.VERSION }}
           files: |
             download/peep-darwin
             download/peep-linux-x64
