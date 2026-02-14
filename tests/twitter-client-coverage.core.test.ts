@@ -41,7 +41,7 @@ describe('TwitterClient core coverage', () => {
   afterEach(() => {
     global.fetch = originalFetch;
     process.env.NODE_ENV = originalNodeEnv;
-    delete process.env.BIRD_DEBUG_ARTICLE;
+    delete process.env.PEEP_DEBUG_ARTICLE;
     vi.restoreAllMocks();
   });
 

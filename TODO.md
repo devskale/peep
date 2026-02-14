@@ -1,34 +1,35 @@
 # bird → peep Rename Checklist
 
 ## Core Files
-- [ ] `package.json` - name, bin, scripts, env vars
-- [ ] `.gitignore` - binary name
+- [x] `package.json` - name, bin, scripts, env vars
+- [x] `.gitignore` - binary name
 
 ## Documentation
-- [ ] `README.md` - all references
-- [ ] `CHANGELOG.md` - all references  
-- [ ] `docs/releasing.md`
-- [ ] `docs/testing.md`
+- [x] `README.md` - all references
+- [x] `CHANGELOG.md` - all references  
+- [x] `docs/releasing.md`
+- [x] `docs/testing.md`
 
 ## Source Code (src/)
-- [ ] `src/cli.ts` - comments
-- [ ] `src/cli/program.ts` - name, banner, examples
-- [ ] `src/cli/shared.ts` - BirdConfig → PeepConfig, paths, env vars
-- [ ] `src/lib/version.ts` - BIRD_VERSION → PEEP_VERSION
-- [ ] `src/lib/runtime-query-ids.ts` - env vars, paths
-- [ ] `src/lib/runtime-features.ts` - env vars, paths
-- [ ] `src/lib/cli-args.ts` - argv
-- [ ] `src/lib/twitter-client-timelines.ts` - debug env vars
-- [ ] `src/lib/twitter-client-news.ts` - debug env vars
-- [ ] `src/lib/twitter-client-utils.ts` - debug env vars
-- [ ] `src/commands/user-tweets.ts` - examples
-- [ ] `src/commands/query-ids.ts` - example
+- [x] `src/cli.ts` - comments
+- [x] `src/cli/program.ts` - name, banner, examples
+- [x] `src/cli/shared.ts` - BirdConfig → PeepConfig, paths, env vars
+- [x] `src/lib/version.ts` - BIRD_VERSION → PEEP_VERSION
+- [x] `src/lib/runtime-query-ids.ts` - env vars, paths
+- [x] `src/lib/runtime-features.ts` - env vars, paths
+- [x] `src/lib/cli-args.ts` - argv
+- [x] `src/lib/twitter-client-timelines.ts` - debug env vars
+- [x] `src/lib/twitter-client-news.ts` - debug env vars
+- [x] `src/lib/twitter-client-utils.ts` - debug env vars
+- [x] `src/commands/user-tweets.ts` - examples
+- [x] `src/commands/query-ids.ts` - example
 
 ## Tests (tests/)
-- [ ] All test files - env vars, CLI invocations
+- [x] All test files - env vars, CLI invocations
 
 ## Validation
-- [ ] `pnpm install`
-- [ ] `pnpm run build:dist`
-- [ ] `pnpm test`
-- [ ] Verify `./peep --help` works
+- [x] `pnpm install`
+- [x] `pnpm run build:dist`
+- [x] `pnpm run build:binary`
+- [x] `pnpm test`
+- [x] Verify `./peep --help` works

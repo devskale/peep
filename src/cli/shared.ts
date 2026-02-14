@@ -153,7 +153,7 @@ function readConfigFile(path: string, warn: (message: string) => void): Partial<
   }
   try {
     const raw = readFileSync(path, 'utf8');
-    const parsed = JSON5.parse(raw) as Partial<BirdConfig>;
+    const parsed = JSON5.parse(raw) as Partial<PeepConfig>;
     return parsed ?? {};
   } catch (error) {
     warn(`Failed to parse config at ${path}: ${error instanceof Error ? error.message : String(error)}`);

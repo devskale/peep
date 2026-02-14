@@ -37,8 +37,8 @@ describe('cli shared', () => {
   });
 
   it('uses chromeProfileDir from config when provided', async () => {
-    const tempHome = mkdtempSync(join(tmpdir(), 'bird-home-'));
-    const configDir = join(tempHome, '.config', 'bird');
+    const tempHome = mkdtempSync(join(tmpdir(), 'peep-home-'));
+    const configDir = join(tempHome, '.config', 'peep');
     mkdirSync(configDir, { recursive: true });
     writeFileSync(
       join(configDir, 'config.json5'),

@@ -7,7 +7,7 @@ import { TwitterClient } from '../../src/lib/twitter-client.js';
 
 type RunResult = { exitCode: number; stdout: string; stderr: string; signal: NodeJS.Signals | null };
 
-const LIVE = process.env.BIRD_LIVE === '1';
+const LIVE = process.env.PEEP_LIVE === '1';
 
 const authToken = (process.env.AUTH_TOKEN ?? process.env.TWITTER_AUTH_TOKEN ?? '').trim();
 const ct0 = (process.env.CT0 ?? process.env.TWITTER_CT0 ?? '').trim();
@@ -17,11 +17,11 @@ const CLI_PATH = path.resolve(process.cwd(), 'dist', 'cli.js');
 const WHOAMI_HANDLE_REGEX = /^user:\s*@([A-Za-z0-9_]+)/m;
 const WHOAMI_USER_ID_REGEX = /^user_id:\s*([0-9]+)/m;
 const TWEET_ID_REGEX = /^\d+$/;
-const LIVE_NODE_ENV = (process.env.BIRD_LIVE_NODE_ENV ?? 'production').trim() || 'production';
+const LIVE_NODE_ENV = (process.env.PEEP_LIVE_NODE_ENV ?? 'production').trim() || 'production';
 
-function runBird(args: string[], options: { timeoutMs?: number } = {}): Promise<RunResult> {
+function runPeep(args: string[], options: { timeoutMs?: number } = {}): Promise<RunResult> {
   if (!LIVE) {
-    throw new Error('runBird() called without BIRD_LIVE=1');
+    throw new Error('runPeep() called without PEEP_LIVE=1');
   }
 
   return new Promise((resolve) => {
@@ -73,8 +73,8 @@ function parseJson<T>(stdout: string): T {
 const d = LIVE ? describe : describe.skip;
 
 d('live CLI (Twitter/X)', () => {
-  const timeoutArg = (process.env.BIRD_LIVE_TIMEOUT_MS ?? '20000').trim();
-  const cookieTimeoutArg = (process.env.BIRD_LIVE_COOKIE_TIMEOUT_MS ?? '30000').trim();
+  const timeoutArg = (process.env.PEEP_LIVE_TIMEOUT_MS ?? '20000').trim();
+  const cookieTimeoutArg = (process.env.PEEP_LIVE_COOKIE_TIMEOUT_MS ?? '30000').trim();
   const baseArgs = ['--plain', '--timeout', timeoutArg, '--quote-depth', '0'];
 
   let whoamiStdout = '';
@@ -88,18 +88,18 @@ d('live CLI (Twitter/X)', () => {
     }
 
     if (!authToken || !ct0) {
-      const check = await runBird([...baseArgs, '--cookie-timeout', cookieTimeoutArg, 'check'], { timeoutMs: 45_000 });
+      const check = await runPeep([...baseArgs, '--cookie-timeout', cookieTimeoutArg, 'check'], { timeoutMs: 45_000 });
       if (check.exitCode !== 0) {
         throw new Error(
           'Missing live credentials.\n' +
             '- Option A: set AUTH_TOKEN + CT0 (or TWITTER_AUTH_TOKEN/TWITTER_CT0)\n' +
             '- Option B: login to x.com in Safari/Chrome/Firefox for cookie extraction\n\n' +
-            `bird check output:\n${check.stdout}\n${check.stderr}`,
+            `peep check output:\n${check.stdout}\n${check.stderr}`,
         );
       }
     }
 
-    const who = await runBird([...baseArgs, '--cookie-timeout', cookieTimeoutArg, 'whoami'], { timeoutMs: 45_000 });
+    const who = await runPeep([...baseArgs, '--cookie-timeout', cookieTimeoutArg, 'whoami'], { timeoutMs: 45_000 });
     if (who.exitCode !== 0) {
       throw new Error(`whoami failed (exit ${who.exitCode}, signal ${who.signal ?? 'none'}):\n${who.stderr}`);
     }
@@ -117,19 +117,19 @@ d('live CLI (Twitter/X)', () => {
     }
     userId = userIdMatch[1];
 
-    const forcedTweetId = (process.env.BIRD_LIVE_TWEET_ID ?? '').trim();
+    const forcedTweetId = (process.env.PEEP_LIVE_TWEET_ID ?? '').trim();
     if (forcedTweetId) {
       if (!TWEET_ID_REGEX.test(forcedTweetId)) {
-        throw new Error(`Invalid BIRD_LIVE_TWEET_ID (expected digits): "${forcedTweetId}"`);
+        throw new Error(`Invalid PEEP_LIVE_TWEET_ID (expected digits): "${forcedTweetId}"`);
       }
       tweetId = forcedTweetId;
       return;
     }
 
     const searchQuery = (
-      process.env.BIRD_LIVE_SEARCH_QUERY ?? `from:${handle} -filter:replies -filter:retweets`
+      process.env.PEEP_LIVE_SEARCH_QUERY ?? `from:${handle} -filter:replies -filter:retweets`
     ).trim();
-    const search = await runBird(
+    const search = await runPeep(
       [...baseArgs, '--cookie-timeout', cookieTimeoutArg, 'search', searchQuery, '-n', '25', '--json'],
       {
         timeoutMs: 45_000,
@@ -143,7 +143,7 @@ d('live CLI (Twitter/X)', () => {
     if (!TWEET_ID_REGEX.test(first)) {
       throw new Error(
         `Search returned no usable tweets. Query: "${searchQuery}". ` +
-          `Override with BIRD_LIVE_SEARCH_QUERY.\n${search.stdout}`,
+          `Override with PEEP_LIVE_SEARCH_QUERY.\n${search.stdout}`,
       );
     }
     tweetId = first;
@@ -162,24 +162,24 @@ d('live CLI (Twitter/X)', () => {
   });
 
   it('follow/unfollow works (opt-in)', async () => {
-    const followHandle = (process.env.BIRD_LIVE_FOLLOW_HANDLE ?? '').trim();
+    const followHandle = (process.env.PEEP_LIVE_FOLLOW_HANDLE ?? '').trim();
     if (!followHandle) {
       return;
     }
 
-    const follow = await runBird([...baseArgs, '--cookie-timeout', cookieTimeoutArg, 'follow', followHandle], {
+    const follow = await runPeep([...baseArgs, '--cookie-timeout', cookieTimeoutArg, 'follow', followHandle], {
       timeoutMs: 45_000,
     });
     expect(follow.exitCode).toBe(0);
 
-    const unfollow = await runBird([...baseArgs, '--cookie-timeout', cookieTimeoutArg, 'unfollow', followHandle], {
+    const unfollow = await runPeep([...baseArgs, '--cookie-timeout', cookieTimeoutArg, 'unfollow', followHandle], {
       timeoutMs: 45_000,
     });
     expect(unfollow.exitCode).toBe(0);
   });
 
   it('read returns tweet JSON', async () => {
-    const read = await runBird([...baseArgs, '--cookie-timeout', cookieTimeoutArg, 'read', tweetId, '--json'], {
+    const read = await runPeep([...baseArgs, '--cookie-timeout', cookieTimeoutArg, 'read', tweetId, '--json'], {
       timeoutMs: 45_000,
     });
     expect(read.exitCode).toBe(0);
@@ -189,7 +189,7 @@ d('live CLI (Twitter/X)', () => {
   });
 
   it('tweet-id shorthand returns tweet JSON', async () => {
-    const shorthand = await runBird([...baseArgs, '--cookie-timeout', cookieTimeoutArg, tweetId, '--json'], {
+    const shorthand = await runPeep([...baseArgs, '--cookie-timeout', cookieTimeoutArg, tweetId, '--json'], {
       timeoutMs: 45_000,
     });
     expect(shorthand.exitCode).toBe(0);
@@ -198,7 +198,7 @@ d('live CLI (Twitter/X)', () => {
   });
 
   it('replies returns JSON array', async () => {
-    const replies = await runBird([...baseArgs, '--cookie-timeout', cookieTimeoutArg, 'replies', tweetId, '--json'], {
+    const replies = await runPeep([...baseArgs, '--cookie-timeout', cookieTimeoutArg, 'replies', tweetId, '--json'], {
       timeoutMs: 45_000,
     });
     expect(replies.exitCode).toBe(0);
@@ -207,7 +207,7 @@ d('live CLI (Twitter/X)', () => {
   });
 
   it('thread returns JSON array', async () => {
-    const thread = await runBird([...baseArgs, '--cookie-timeout', cookieTimeoutArg, 'thread', tweetId, '--json'], {
+    const thread = await runPeep([...baseArgs, '--cookie-timeout', cookieTimeoutArg, 'thread', tweetId, '--json'], {
       timeoutMs: 45_000,
     });
     expect(thread.exitCode).toBe(0);
@@ -217,7 +217,7 @@ d('live CLI (Twitter/X)', () => {
   });
 
   it('mentions returns JSON array', async () => {
-    const mentions = await runBird(
+    const mentions = await runPeep(
       [...baseArgs, '--cookie-timeout', cookieTimeoutArg, 'mentions', '-n', '10', '--json'],
       {
         timeoutMs: 45_000,
@@ -229,7 +229,7 @@ d('live CLI (Twitter/X)', () => {
   });
 
   it('bookmarks returns JSON array', async () => {
-    const bookmarks = await runBird(
+    const bookmarks = await runPeep(
       [...baseArgs, '--cookie-timeout', cookieTimeoutArg, 'bookmarks', '-n', '10', '--json'],
       {
         timeoutMs: 45_000,
@@ -241,11 +241,11 @@ d('live CLI (Twitter/X)', () => {
   });
 
   it('bookmarks --folder-id works (opt-in)', async () => {
-    const folderId = (process.env.BIRD_LIVE_BOOKMARK_FOLDER_ID ?? '').trim();
+    const folderId = (process.env.PEEP_LIVE_BOOKMARK_FOLDER_ID ?? '').trim();
     if (!folderId) {
       return;
     }
-    const bookmarks = await runBird(
+    const bookmarks = await runPeep(
       [...baseArgs, '--cookie-timeout', cookieTimeoutArg, 'bookmarks', '--folder-id', folderId, '-n', '10', '--json'],
       { timeoutMs: 45_000 },
     );
@@ -255,7 +255,7 @@ d('live CLI (Twitter/X)', () => {
   });
 
   it('likes returns JSON array', async () => {
-    const likes = await runBird([...baseArgs, '--cookie-timeout', cookieTimeoutArg, 'likes', '-n', '10', '--json'], {
+    const likes = await runPeep([...baseArgs, '--cookie-timeout', cookieTimeoutArg, 'likes', '-n', '10', '--json'], {
       timeoutMs: 45_000,
     });
     expect(likes.exitCode).toBe(0);
@@ -264,7 +264,7 @@ d('live CLI (Twitter/X)', () => {
   });
 
   it('following returns JSON array', async () => {
-    const following = await runBird(
+    const following = await runPeep(
       [...baseArgs, '--cookie-timeout', cookieTimeoutArg, 'following', '--user', userId, '-n', '10', '--json'],
       {
         timeoutMs: 45_000,
@@ -276,7 +276,7 @@ d('live CLI (Twitter/X)', () => {
   });
 
   it('followers returns JSON array', async () => {
-    const followers = await runBird(
+    const followers = await runPeep(
       [...baseArgs, '--cookie-timeout', cookieTimeoutArg, 'followers', '--user', userId, '-n', '10', '--json'],
       {
         timeoutMs: 45_000,
@@ -289,8 +289,8 @@ d('live CLI (Twitter/X)', () => {
 
   it('user-tweets returns JSON array', async () => {
     // Use a known active account for reliable testing (authenticated user may have no tweets)
-    const testHandle = process.env.BIRD_LIVE_USER_TWEETS_HANDLE || 'X';
-    const userTweets = await runBird(
+    const testHandle = process.env.PEEP_LIVE_USER_TWEETS_HANDLE || 'X';
+    const userTweets = await runPeep(
       [...baseArgs, '--cookie-timeout', cookieTimeoutArg, 'user-tweets', testHandle, '-n', '5', '--json'],
       {
         timeoutMs: 45_000,
@@ -306,8 +306,8 @@ d('live CLI (Twitter/X)', () => {
 
   it('user-tweets paged JSON returns { tweets, nextCursor }', async () => {
     const testHandle =
-      process.env.BIRD_LIVE_USER_TWEETS_PAGED_HANDLE ?? process.env.BIRD_LIVE_USER_TWEETS_HANDLE ?? 'X';
-    const userTweets = await runBird(
+      process.env.PEEP_LIVE_USER_TWEETS_PAGED_HANDLE ?? process.env.PEEP_LIVE_USER_TWEETS_HANDLE ?? 'X';
+    const userTweets = await runPeep(
       [
         ...baseArgs,
         '--cookie-timeout',
@@ -334,7 +334,7 @@ d('live CLI (Twitter/X)', () => {
   });
 
   it('query-ids returns JSON', async () => {
-    const queryIds = await runBird([...baseArgs, '--cookie-timeout', cookieTimeoutArg, 'query-ids', '--json'], {
+    const queryIds = await runPeep([...baseArgs, '--cookie-timeout', cookieTimeoutArg, 'query-ids', '--json'], {
       timeoutMs: 60_000,
     });
     expect(queryIds.exitCode).toBe(0);
@@ -343,10 +343,10 @@ d('live CLI (Twitter/X)', () => {
   });
 
   it('query-ids --fresh works (opt-in)', async () => {
-    if (process.env.BIRD_LIVE_QUERY_IDS_FRESH !== '1') {
+    if (process.env.PEEP_LIVE_QUERY_IDS_FRESH !== '1') {
       return;
     }
-    const queryIds = await runBird([...baseArgs, 'query-ids', '--fresh', '--json'], { timeoutMs: 5 * 60_000 });
+    const queryIds = await runPeep([...baseArgs, 'query-ids', '--fresh', '--json'], { timeoutMs: 5 * 60_000 });
     expect(queryIds.exitCode).toBe(0);
     const snapshot = parseJson<{ cached?: boolean; ids?: Record<string, string> }>(queryIds.stdout);
     expect(snapshot.cached).toBe(true);
@@ -354,12 +354,12 @@ d('live CLI (Twitter/X)', () => {
   });
 
   it('long-form tweet (article) extracts rich content (opt-in)', async () => {
-    const longformTweetId = (process.env.BIRD_LIVE_LONGFORM_TWEET_ID ?? '').trim();
+    const longformTweetId = (process.env.PEEP_LIVE_LONGFORM_TWEET_ID ?? '').trim();
     if (!longformTweetId) {
       // Skip unless explicitly provided - long-form tweets may be deleted/unavailable
       return;
     }
-    const read = await runBird([...baseArgs, '--cookie-timeout', cookieTimeoutArg, 'read', longformTweetId, '--json'], {
+    const read = await runPeep([...baseArgs, '--cookie-timeout', cookieTimeoutArg, 'read', longformTweetId, '--json'], {
       timeoutMs: 45_000,
     });
     expect(read.exitCode).toBe(0);
@@ -371,12 +371,12 @@ d('live CLI (Twitter/X)', () => {
   });
 
   it('engagement mutations work (opt-in)', async () => {
-    const engagementTweetId = (process.env.BIRD_LIVE_ENGAGEMENT_TWEET_ID ?? '').trim();
+    const engagementTweetId = (process.env.PEEP_LIVE_ENGAGEMENT_TWEET_ID ?? '').trim();
     if (!engagementTweetId) {
       return;
     }
     if (!TWEET_ID_REGEX.test(engagementTweetId)) {
-      throw new Error(`Invalid BIRD_LIVE_ENGAGEMENT_TWEET_ID (expected digits): "${engagementTweetId}"`);
+      throw new Error(`Invalid PEEP_LIVE_ENGAGEMENT_TWEET_ID (expected digits): "${engagementTweetId}"`);
     }
 
     const cookieTimeoutMs = Number.parseInt(cookieTimeoutArg, 10);

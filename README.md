@@ -10,6 +10,10 @@ and anti-bot behavior at any time - **expect this to break without notice**.
 **Strong recommendation: Do not use peep to tweet. You will hit blocks very quickly. Use it to read tweets.
 Bots are not welcome on X/Twitter. If you absolutely have to, use browser automation instead, or pay for the Twitter API to create tweets.**
 
+## Documentation
+
+- **[Architecture](docs/ARCHITECTURE.md)** - How peep works internally (GraphQL API, query ID discovery, authentication, request flow)
+
 ## Install
 
 ```bash
