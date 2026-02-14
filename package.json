@@ -1,7 +1,7 @@
 {
   "name": "@devskale/peep",
   "version": "0.8.1",
-  "description": "CLI tool for tweeting and replying via Twitter/X GraphQL API",
+  "description": "CLI tool for consuming Twitter/X via GraphQL API",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
