@@ -56,7 +56,10 @@ jobs:
 
       - name: Get version
         id: version
-        run: echo "VERSION=$(node -p \"require('./package.json').version\")" >> $GITHUB_OUTPUT
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+          echo "Version is $VERSION"
 
       - name: Download peep-darwin
         uses: actions/download-artifact@v4
@@ -74,14 +77,22 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          RELEASE_ID=$(curl -s -H "Authorization: token $GITHUB_TOKEN" \
-            "https://api.github.com/repos/${{ github.repository }}/releases/tags/latest" \
-            | jq -r '.id // empty')
+          echo "Checking for existing latest release..."
+          # Try to get the release by tag name
+          RESPONSE=$(curl -s -w "%{http_code}" -o /dev/null -H "Authorization: token $GITHUB_TOKEN" \
+            "https://api.github.com/repos/${{ github.repository }}/releases/tags/latest")
           
-          if [ -n "$RELEASE_ID" ]; then
-            echo "Deleting existing release $RELEASE_ID"
+          if [ "$RESPONSE" = "200" ]; then
+            echo "Found existing release, deleting..."
+            RELEASE_ID=$(curl -s -H "Authorization: token $GITHUB_TOKEN" \
+              "https://api.github.com/repos/${{ github.repository }}/releases/tags/latest" \
+              | jq -r '.id')
+            echo "Deleting release ID: $RELEASE_ID"
             curl -s -X DELETE -H "Authorization: token $GITHUB_TOKEN" \
               "https://api.github.com/repos/${{ github.repository }}/releases/$RELEASE_ID"
+            echo "Deleted"
+          else
+            echo "No existing release found (HTTP $RESPONSE)"
           fi
 
       - name: Create Release
