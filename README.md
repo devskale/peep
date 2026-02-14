@@ -18,6 +18,13 @@ Bots are not welcome on X/Twitter. If you absolutely have to, use browser automa
 ## Install
 
 ```bash
+# Quick install (macOS / Linux x86_64)
+curl -sL https://skale.dev/peep/install.sh | sh
+```
+
+Or build from source:
+
+```bash
 # Clone from GitHub
 git clone https://github.com/devskale/peep.git
 cd peep
