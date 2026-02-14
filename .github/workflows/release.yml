@@ -51,18 +51,28 @@ jobs:
       contents: write
     
     steps:
-      - name: Download all artifacts
+      - name: Download peep-darwin
         uses: actions/download-artifact@v4
         with:
-          path: artifacts
+          name: peep-darwin
+          path: download
+
+      - name: Download peep-linux-x64
+        uses: actions/download-artifact@v4
+        with:
+          name: peep-linux-x64
+          path: download
+
+      - name: List files
+        run: ls -la download/
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
           files: |
-            artifacts/peep-darwin
-            artifacts/peep-linux-x64
+            download/peep-darwin
+            download/peep-linux-x64
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
