@@ -17,20 +17,29 @@ Bots are not welcome on X/Twitter. If you absolutely have to, use browser automa
 ## Install
 
 ```bash
-npm install -g @steipete/peep
+npm install -g @devskale/peep
 # or
-pnpm add -g @steipete/peep
+pnpm add -g @devskale/peep
 # or
-bun add -g @steipete/peep
+bun add -g @devskale/peep
 
 # one-shot (no install)
-bunx @steipete/peep whoami
+bunx @devskale/peep whoami
 ```
 
 Homebrew (macOS, prebuilt Bun binary):
 
 ```bash
-brew install steipete/tap/peep
+brew install devskale/tap/peep
+```
+
+Or install from source:
+
+```bash
+git clone https://github.com/devskale/peep.git
+cd peep
+pnpm install
+pnpm run build
 ```
 
 ## Quickstart
@@ -135,7 +144,7 @@ By default, the command fetches from For You, News, Sports, and Entertainment ta
 `peep` can be used as a library (same GraphQL client as the CLI):
 
 ```ts
-import { TwitterClient, resolveCredentials } from '@steipete/peep';
+import { TwitterClient, resolveCredentials } from '@devskale/peep';
 
 const { cookies } = await resolveCredentials({ cookieSource: 'safari' });
 const client = new TwitterClient({ cookies });
