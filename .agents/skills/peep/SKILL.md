@@ -1,218 +1,92 @@
 ---
 name: peep
-description: X/Twitter CLI for reading, searching, posting, and engagement via cookies.
-homepage: https://github.com/devskale/peep
-metadata:
-  {
-    "clawdbot":
-      {
-        "emoji": "🐦",
-        "requires": { "bins": ["peep"] },
-        "install":
-          [
-            {
-              "id": "pnpm",
-              "kind": "node",
-              "package": "@devskale/peep",
-              "bins": ["peep"],
-              "label": "Install peep (pnpm)",
-            }
-          ]
-      },
-  }
+description: X/Twitter CLI for reading, searching, and posting via cookie auth.
 ---
 
-# peep 🐦
+# peep
 
-Fast X/Twitter CLI using GraphQL + cookie auth.
+X/Twitter CLI for tweeting, replying, reading, searching, and managing your Twitter/X account via the GraphQL API.
 
 ## Install
 
 ```bash
-# pnpm/npm/bun
-pnpm install -g @devskale/peep
-
-# From source (clone and build locally)
 git clone https://github.com/devskale/peep.git
 cd peep
-pnpm install -g .
-
-# One-shot (no install)
-bunx @devskale/peep whoami
+pnpm install
+pnpm run build
 ```
 
-## Authentication
+## Quick Start
 
-`peep` uses cookie-based auth.
-
-Use `--auth-token` / `--ct0` to pass cookies directly, or `--cookie-source` for browser cookies.
-
-Run `peep check` to see which source is active. For Arc/Brave, use `--chrome-profile-dir <path>`.
+```bash
+peep whoami          # Check logged-in account
+peep read <url/id>   # Read a tweet
+peep 1234567890      # Shorthand for read
+peep home            # Home timeline
+peep search "query"  # Search tweets
+peep mentions        # Your mentions
+peep user-tweets @x  # User's tweets
+peep bookmarks       # Your bookmarks
+peep tweet "hello"   # Post a tweet (confirm first!)
+```
 
 ## Commands
 
-### Account & Auth
+| Command | Description |
+|---------|-------------|
+| `peep whoami` | Show logged-in account |
+| `peep check` | Check credential availability |
+| `peep read <url/id>` | Fetch a tweet |
+| `peep thread <url/id>` | Full conversation thread |
+| `peep replies <url/id>` | Replies to a tweet |
+| `peep home` | Home timeline (For You) |
+| `peep home --following` | Following feed |
+| `peep search <query>` | Search tweets |
+| `peep mentions` | Your mentions |
+| `peep user-tweets <handle>` | User's profile timeline |
+| `peep following [user]` | Who you/they follow |
+| `peep followers [user]` | Who follows you/them |
+| `peep likes` | Your liked tweets |
+| `peep bookmarks` | Your bookmarks |
+| `peep unbookmark <id...>` | Remove bookmarks |
+| `peep lists` | Your Twitter lists |
+| `peep list-timeline <id>` | Tweets from a list |
+| `peep news` / `peep trending` | AI-curated news |
+| `peep about <user>` | Account origin/location info |
+| `peep tweet "text"` | Post a tweet |
+| `peep reply <id> "text"` | Reply to a tweet |
+| `peep follow <user>` | Follow a user |
+| `peep unfollow <user>` | Unfollow a user |
 
-```bash
-peep whoami                    # Show logged-in account
-peep check                     # Show credential sources
-peep query-ids --fresh         # Refresh GraphQL query ID cache
-```
+## Common Options
 
-### Reading Tweets
-
-```bash
-peep read <url-or-id>          # Read a single tweet
-peep <url-or-id>               # Shorthand for read
-peep thread <url-or-id>        # Full conversation thread
-peep replies <url-or-id>       # List replies to a tweet
-```
-
-### Timelines
-
-```bash
-peep home                      # Home timeline (For You)
-peep home --following          # Following timeline
-peep user-tweets @handle -n 20 # User's profile timeline
-peep mentions                  # Tweets mentioning you
-peep mentions --user @handle   # Mentions of another user
-```
-
-### Search
-
-```bash
-peep search "query" -n 10
-peep search "from:devskale" --all --max-pages 3
-```
-
-### News & Trending
-
-```bash
-peep news -n 10                # AI-curated from Explore tabs
-peep news --ai-only            # Filter to AI-curated only
-peep news --sports             # Sports tab
-peep news --with-tweets        # Include related tweets
-peep trending                  # Alias for news
-```
-
-### Lists
-
-```bash
-peep lists                     # Your lists
-peep lists --member-of         # Lists you're a member of
-peep list-timeline <id> -n 20  # Tweets from a list
-```
-
-### Bookmarks & Likes
-
-```bash
-peep bookmarks -n 10
-peep bookmarks --folder-id <id>           # Specific folder
-peep bookmarks --include-parent           # Include parent tweet
-peep bookmarks --author-chain             # Author's self-reply chain
-peep bookmarks --full-chain-only          # Full reply chain
-peep unbookmark <url-or-id>
-peep likes -n 10
-```
-
-### Social Graph
-
-```bash
-peep following -n 20           # Users you follow
-peep followers -n 20           # Users following you
-peep following --user <id>     # Another user's following
-peep about @handle             # Account origin/location info
-```
-
-### Engagement Actions
-
-```bash
-peep follow @handle            # Follow a user
-peep unfollow @handle          # Unfollow a user
-```
-
-### Posting
-
-```bash
-peep tweet "hello world"
-peep reply <url-or-id> "nice thread!"
-peep tweet "check this out" --media image.png --alt "description"
-```
-
-**⚠️ Posting risks**: Posting is more likely to be rate limited; if blocked, use the browser tool instead.
-
-## Media Uploads
-
-```bash
-peep tweet "hi" --media img.png --alt "description"
-peep tweet "pics" --media a.jpg --media b.jpg  # Up to 4 images
-peep tweet "video" --media clip.mp4            # Or 1 video
-```
+| Flag | Description |
+|------|-------------|
+| `--json` | JSON output |
+| `--json-full` | JSON with raw API response |
+| `--plain` | Plain output (no emoji/color) |
+| `--timeout <ms>` | Request timeout |
+| `--quote-depth <n>` | Max quoted tweet depth |
 
 ## Pagination
 
-Commands supporting pagination: `replies`, `thread`, `search`, `bookmarks`, `likes`, `list-timeline`, `following`, `followers`, `user-tweets`
+Use `--all`, `--max-pages <n>`, `--cursor <string>`, `--delay <ms>` for paginated commands.
 
-```bash
-peep bookmarks --all                    # Fetch all pages
-peep bookmarks --max-pages 3            # Limit pages
-peep bookmarks --cursor <cursor>        # Resume from cursor
-peep replies <id> --all --delay 1000    # Delay between pages (ms)
-```
+## Auth
 
-## Output Options
+- Browser: `--firefox-profile`, `--chrome-profile`, `--chrome-profile-dir`, `--cookie-source`
+- Manual: `--auth-token`, `--ct0`
 
-```bash
---json          # JSON output
---json-full     # JSON with raw API response
---plain         # No emoji, no color (script-friendly)
---no-emoji      # Disable emoji
---no-color      # Disable ANSI colors (or set NO_COLOR=1)
---quote-depth n # Max quoted tweet depth in JSON (default: 1)
-```
+## Config & Env
 
-## Global Options
+- Config: `~/.config/peep/config.json5` or `./peeprc.json5`
+- Env: `PEEP_TIMEOUT_MS`, `PEEP_COOKIE_TIMEOUT_MS`, `PEEP_QUOTE_DEPTH`
 
-```bash
---auth-token <token>       # Set auth_token cookie
---ct0 <token>              # Set ct0 cookie
---cookie-source <source>   # Cookie source for browser cookies (repeatable)
---chrome-profile <name>    # Chrome profile name
---chrome-profile-dir <path> # Chrome/Chromium profile dir or cookie DB path
---firefox-profile <name>   # Firefox profile
---timeout <ms>             # Request timeout
---cookie-timeout <ms>      # Cookie extraction timeout
-```
+## Extended Docs
 
-## Config File
-
-`~/.config/peep/config.json5` (global) or `./.peeprc.json5` (project):
-
-```json5
-{
-  cookieSource: ["chrome"],
-  chromeProfileDir: "/path/to/Arc/Profile",
-  timeoutMs: 20000,
-  quoteDepth: 1,
-}
-```
-
-Environment variables: `PEEP_TIMEOUT_MS`, `PEEP_COOKIE_TIMEOUT_MS`, `PEEP_QUOTE_DEPTH`
-
-## Troubleshooting
-
-### Query IDs stale (404 errors)
-
-```bash
-peep query-ids --fresh
-```
-
-### Cookie extraction fails
-
-- Check browser is logged into X
-- Try different `--cookie-source`
-- For Arc/Brave: use `--chrome-profile-dir`
-
----
-
-**TL;DR**: Read/search/engage with CLI. Post carefully or use browser. 🐦
+- [Auth Details](references/auth.md) - Cookie sources, browser profiles, manual tokens
+- [Pagination](references/pagination.md) - All pagination options explained
+- [Bookmarks](references/bookmarks.md) - Folder support, thread expansion options
+- [News & Trending](references/news.md) - Explore tabs, filters, AI-curated content
+- [Media](references/media.md) - Image/video uploads, supported formats
+- [JSON Output](references/json.md) - Schema, fields, pagination format
