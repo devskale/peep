@@ -1,4 +1,5 @@
 # peep 👀 - fast X CLI for tweeting, replying, and reading
+stolen from @steipete/bird, which is now deprecated.
 
 `peep` is a fast X CLI for tweeting, replying, and reading via X/Twitter GraphQL (cookie auth).
 
@@ -17,29 +18,20 @@ Bots are not welcome on X/Twitter. If you absolutely have to, use browser automa
 ## Install
 
 ```bash
-npm install -g @devskale/peep
-# or
-pnpm add -g @devskale/peep
-# or
-bun add -g @devskale/peep
-
-# one-shot (no install)
-bunx @devskale/peep whoami
-```
-
-Homebrew (macOS, prebuilt Bun binary):
-
-```bash
-brew install devskale/tap/peep
-```
-
-Or install from source:
-
-```bash
+# Clone from GitHub
 git clone https://github.com/devskale/peep.git
 cd peep
 pnpm install
 pnpm run build
+
+# Or use bun to build directly
+git clone https://github.com/devskale/peep.git
+cd peep
+bun install
+bun run build:binary   # produces ./peep binary
+
+# One-shot with bun (no install)
+bunx github:devskale/peep whoami
 ```
 
 ## Quickstart
@@ -141,10 +133,10 @@ By default, the command fetches from For You, News, Sports, and Entertainment ta
 
 ## Library
 
-`peep` can be used as a library (same GraphQL client as the CLI):
+`peep` can be used as a library (same GraphQL client as the CLI). Clone and import locally:
 
 ```ts
-import { TwitterClient, resolveCredentials } from '@devskale/peep';
+import { TwitterClient, resolveCredentials } from './src/lib/twitter-client.js';
 
 const { cookies } = await resolveCredentials({ cookieSource: 'safari' });
 const client = new TwitterClient({ cookies });
