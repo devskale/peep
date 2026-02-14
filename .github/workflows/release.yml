@@ -73,27 +73,22 @@ jobs:
           name: peep-linux-x64
           path: download
 
-      - name: Delete existing release
+      - name: Delete all existing releases
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          echo "Checking for existing latest release..."
-          # Try to get the release by tag name
-          RESPONSE=$(curl -s -w "%{http_code}" -o /dev/null -H "Authorization: token $GITHUB_TOKEN" \
-            "https://api.github.com/repos/${{ github.repository }}/releases/tags/latest")
+          echo "Deleting all existing releases..."
+          # Get all releases
+          RELEASES=$(curl -s -H "Authorization: token $GITHUB_TOKEN" \
+            "https://api.github.com/repos/${{ github.repository }}/releases" \
+            | jq -r '.[].id')
           
-          if [ "$RESPONSE" = "200" ]; then
-            echo "Found existing release, deleting..."
-            RELEASE_ID=$(curl -s -H "Authorization: token $GITHUB_TOKEN" \
-              "https://api.github.com/repos/${{ github.repository }}/releases/tags/latest" \
-              | jq -r '.id')
+          for RELEASE_ID in $RELEASES; do
             echo "Deleting release ID: $RELEASE_ID"
             curl -s -X DELETE -H "Authorization: token $GITHUB_TOKEN" \
               "https://api.github.com/repos/${{ github.repository }}/releases/$RELEASE_ID"
-            echo "Deleted"
-          else
-            echo "No existing release found (HTTP $RESPONSE)"
-          fi
+          done
+          echo "All releases deleted"
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
