@@ -15,9 +15,6 @@ jobs:
             binary_name: peep-darwin
           - os: ubuntu-latest
             binary_name: peep-linux-x64
-          - os: ubuntu-latest
-            binary_name: peep-linux-arm64
-            target: aarch64
 
     runs-on: ${{ matrix.os }}
 
@@ -38,14 +35,8 @@ jobs:
           PEEP_VERSION: ${{ github.ref_name }}
           PEEP_GIT_SHA: ${{ github.sha }}
         run: |
-          if [ "${{ matrix.binary_name }}" = "peep-linux-arm64" ]; then
-            bun build --compile --minify --env=PEEP_* \
-              --target=linux-arm64 \
-              src/cli.ts --outfile ${{ matrix.binary_name }}
-          else
-            bun build --compile --minify --env=PEEP_* \
-              src/cli.ts --outfile ${{ matrix.binary_name }}
-          fi
+          bun build --compile --minify --env=PEEP_* \
+            src/cli.ts --outfile ${{ matrix.binary_name }}
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -72,7 +63,6 @@ jobs:
           files: |
             artifacts/peep-darwin
             artifacts/peep-linux-x64
-            artifacts/peep-linux-arm64
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
