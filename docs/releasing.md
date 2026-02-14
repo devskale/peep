@@ -1,8 +1,8 @@
 # Releasing peep
 
 Target destinations:
-- npm: `@steipete/peep`
-- Homebrew: tap formula in `steipete/homebrew-tap` (e.g., `peep.rb`)
+- npm: `@devskale/peep`
+- Homebrew: tap formula in `devskale/homebrew-tap` (e.g., `peep.rb`)
 
 ## Checklist (npm + GitHub)
 1) Version bump
@@ -16,10 +16,10 @@ Target destinations:
 
 3) Publish to npm (scoped)
    - Ensure you are logged in (`npm whoami`).
-   - `npm publish --access public` (from repo root). Package name is `@steipete/peep`.
+   - `npm publish --access public` (from repo root). Package name is `@devskale/peep`.
    - Verify:
-     - `npm view @steipete/peep version`
-     - `npx -y @steipete/peep@<version> --help`
+     - `npm view @devskale/peep version`
+     - `npx -y @devskale/peep@<version> --help`
 
 4) Git tag & GitHub release
    - `git tag v<version> && git push origin v<version>`
@@ -30,7 +30,7 @@ If you want a single-file binary for Homebrew/GitHub assets:
 - Build: `pnpm run binary` (uses Bun to produce `./peep`).
 - Upload `peep` to the GitHub release and use it for the Homebrew tarball.
 
-## Homebrew tap update (steipete/homebrew-tap)
+## Homebrew tap update (devskale/homebrew-tap)
 1) Package the binary
    - From repo root: `tar -czf peep-macos-universal-v<version>.tar.gz peep`
    - Compute SHA: `shasum -a 256 peep-macos-universal-v<version>.tar.gz`
@@ -38,7 +38,7 @@ If you want a single-file binary for Homebrew/GitHub assets:
 2) Update formula in tap repo
    - File: `homebrew-tap/peep.rb` (create if absent). Model it after `poltergeist.rb`.
    - Fields to update:
-     - `url "https://github.com/steipete/peep/releases/download/v<version>/peep-macos-universal-v<version>.tar.gz"`
+     - `url "https://github.com/devskale/peep/releases/download/v<version>/peep-macos-universal-v<version>.tar.gz"`
      - `sha256 "<calculated_sha>"`
      - `version "<version>"`
    - Install block: `bin.install "peep"`
@@ -54,6 +54,6 @@ If you want a single-file binary for Homebrew/GitHub assets:
 4) Update Homebrew tap with new URL/SHA.
 
 ## Notes
-- Scoped npm name (`@steipete/peep`) requires `--access public` on first publish.
+- Scoped npm name (`@devskale/peep`) requires `--access public` on first publish.
 - Homebrew formula assumes macOS universal binary; adjust URL/name if you ship per-arch.
 - Config defaults (JSON5) and Safari/Chrome/Firefox cookie selection are documented in `README.md` — keep that in sync for each release.
