@@ -13,10 +13,12 @@ coverage/
 .turbo/
 .eslintcache
 twitter-cli.bin
-peep
 .env
 .*.bun-build
 *.zip
 *.tar
 *.tar.gz
 *.tgz
+
+# Binary (build output)
+/peep
