@@ -47,11 +47,32 @@ jobs:
               src/cli.ts --outfile ${{ matrix.binary_name }}
           fi
 
-      - name: Upload binary
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.binary_name }}
+          path: ${{ matrix.binary_name }}
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
-          files: ${{ matrix.binary_name }}
+          files: |
+            artifacts/peep-darwin
+            artifacts/peep-linux-x64
+            artifacts/peep-linux-arm64
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
