@@ -1,0 +1,57 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            binary_name: peep-darwin
+          - os: ubuntu-latest
+            binary_name: peep-linux-x64
+          - os: ubuntu-latest
+            binary_name: peep-linux-arm64
+            target: aarch64
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build binary
+        env:
+          PEEP_VERSION: ${{ github.ref_name }}
+          PEEP_GIT_SHA: ${{ github.sha }}
+        run: |
+          if [ "${{ matrix.binary_name }}" = "peep-linux-arm64" ]; then
+            bun build --compile --minify --env=PEEP_* \
+              --target=linux-arm64 \
+              src/cli.ts --outfile ${{ matrix.binary_name }}
+          else
+            bun build --compile --minify --env=PEEP_* \
+              src/cli.ts --outfile ${{ matrix.binary_name }}
+          fi
+
+      - name: Upload binary
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          files: ${{ matrix.binary_name }}
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
