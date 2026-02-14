@@ -70,7 +70,17 @@ peep tweet "hello"   # Post a tweet (confirm first!)
 
 ## Pagination
 
-Use `--all`, `--max-pages <n>`, `--cursor <string>`, `--delay <ms>` for paginated commands.
+For paginated commands (likes, bookmarks, home, search, etc.):
+
+```bash
+peep likes                     # Single page (default)
+peep likes --all               # Fetch all pages
+peep likes --all --max-pages 5 # Limit to 5 pages (requires --all)
+peep likes --cursor <string>   # Resume from cursor
+peep likes --delay 1000        # Delay between pages (ms)
+```
+
+Note: `--max-pages` must be used with `--all` or `--cursor`.
 
 ## Auth
 
