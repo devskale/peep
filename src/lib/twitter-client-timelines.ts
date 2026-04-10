@@ -36,18 +36,15 @@ export function withTimelines<TBase extends AbstractConstructor<TwitterClientBas
     }
 
     private async getBookmarksQueryIds(): Promise<string[]> {
-      const primary = await this.getQueryId('Bookmarks');
-      return Array.from(new Set([primary, 'RV1g3b8n_SGOHwkqKYSCFw', 'tmd4ifV8RHltzn8ymGg1aw']));
+      return this.getQueryIdsWithFallbacks('Bookmarks');
     }
 
     private async getBookmarkFolderQueryIds(): Promise<string[]> {
-      const primary = await this.getQueryId('BookmarkFolderTimeline');
-      return Array.from(new Set([primary, 'KJIQpsvxrTfRIlbaRIySHQ']));
+      return this.getQueryIdsWithFallbacks('BookmarkFolderTimeline');
     }
 
     private async getLikesQueryIds(): Promise<string[]> {
-      const primary = await this.getQueryId('Likes');
-      return Array.from(new Set([primary, 'JR2gceKucIKcVNB_9JkhsA']));
+      return this.getQueryIdsWithFallbacks('Likes');
     }
 
     /**

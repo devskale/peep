@@ -1,6 +1,7 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 import { runtimeQueryIds } from './runtime-query-ids.js';
 import {
+  EXTRA_QUERY_ID_FALLBACKS,
   type OperationName,
   QUERY_IDS,
   TARGET_QUERY_ID_OPERATIONS,
@@ -108,6 +109,17 @@ export abstract class TwitterClientBase {
     return cached ?? QUERY_IDS[operationName];
   }
 
+  /**
+   * Get the runtime (or baked-in) query ID for `operationName`, then append
+   * any extra fallback IDs from `EXTRA_QUERY_ID_FALLBACKS`. Deduplicates
+   * and returns the full ordered list for use with `graphqlFetchWithRetry`.
+   */
+  protected async getQueryIdsWithFallbacks(operationName: OperationName): Promise<string[]> {
+    const primary = await this.getQueryId(operationName);
+    const extras = EXTRA_QUERY_ID_FALLBACKS[operationName] ?? [];
+    return Array.from(new Set([primary, ...extras]));
+  }
+
   protected async refreshQueryIds(): Promise<void> {
     if (process.env.NODE_ENV === 'test') {
       return;
@@ -120,13 +132,11 @@ export abstract class TwitterClientBase {
   }
 
   protected async getTweetDetailQueryIds(): Promise<string[]> {
-    const primary = await this.getQueryId('TweetDetail');
-    return Array.from(new Set([primary, '97JF30KziU00483E_8elBA', 'aFvUsJm2c-oDkJV75blV6g']));
+    return this.getQueryIdsWithFallbacks('TweetDetail');
   }
 
   protected async getSearchTimelineQueryIds(): Promise<string[]> {
-    const primary = await this.getQueryId('SearchTimeline');
-    return Array.from(new Set([primary, 'M1jEez78PEfVfbQLvlWMvQ', '5h0kNbk3ii97rmfY6CdgAA', 'Tp1sewRU1AsZpBWhqCZicQ']));
+    return this.getQueryIdsWithFallbacks('SearchTimeline');
   }
 
   protected async fetchWithTimeout(url: string, init: RequestInit): Promise<Response> {

@@ -101,18 +101,15 @@ export function withLists<TBase extends AbstractConstructor<TwitterClientBase>>(
     }
 
     private async getListOwnershipsQueryIds(): Promise<string[]> {
-      const primary = await this.getQueryId('ListOwnerships');
-      return Array.from(new Set([primary, 'wQcOSjSQ8NtgxIwvYl1lMg']));
+      return this.getQueryIdsWithFallbacks('ListOwnerships');
     }
 
     private async getListMembershipsQueryIds(): Promise<string[]> {
-      const primary = await this.getQueryId('ListMemberships');
-      return Array.from(new Set([primary, 'BlEXXdARdSeL_0KyKHHvvg']));
+      return this.getQueryIdsWithFallbacks('ListMemberships');
     }
 
     private async getListTimelineQueryIds(): Promise<string[]> {
-      const primary = await this.getQueryId('ListLatestTweetsTimeline');
-      return Array.from(new Set([primary, '2TemLyqrMpTeAmysdbnVqw']));
+      return this.getQueryIdsWithFallbacks('ListLatestTweetsTimeline');
     }
 
     /**

@@ -33,13 +33,11 @@ export function withUsers<TBase extends AbstractConstructor<TwitterClientBase>>(
     }
 
     private async getFollowingQueryIds(): Promise<string[]> {
-      const primary = await this.getQueryId('Following');
-      return Array.from(new Set([primary, 'BEkNpEt5pNETESoqMsTEGA']));
+      return this.getQueryIdsWithFallbacks('Following');
     }
 
     private async getFollowersQueryIds(): Promise<string[]> {
-      const primary = await this.getQueryId('Followers');
-      return Array.from(new Set([primary, 'kuFUYP9eV1FPoEy4N-pi7w']));
+      return this.getQueryIdsWithFallbacks('Followers');
     }
 
     private parseUsersFromRestResponse(users: RestUser[] | undefined): TwitterUser[] {

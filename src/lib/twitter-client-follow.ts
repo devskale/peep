@@ -168,11 +168,7 @@ export function withFollow<TBase extends AbstractConstructor<TwitterClientBase>>
     }
 
     private async getFollowQueryIds(follow: boolean): Promise<string[]> {
-      const primary = await this.getQueryId(follow ? 'CreateFriendship' : 'DestroyFriendship');
-      const fallbacks = follow
-        ? ['8h9JVdV8dlSyqyRDJEPCsA', 'OPwKc1HXnBT_bWXfAlo-9g']
-        : ['ppXWuagMNXgvzx6WoXBW0Q', '8h9JVdV8dlSyqyRDJEPCsA'];
-      return Array.from(new Set([primary, ...fallbacks]));
+      return this.getQueryIdsWithFallbacks(follow ? 'CreateFriendship' : 'DestroyFriendship');
     }
   }
 

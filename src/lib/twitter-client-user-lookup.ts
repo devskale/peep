@@ -189,8 +189,7 @@ export function withUserLookup<TBase extends AbstractConstructor<TwitterClientBa
     }
 
     private async getAboutAccountQueryIds(): Promise<string[]> {
-      const primary = await this.getQueryId('AboutAccountQuery');
-      return Array.from(new Set([primary, 'zs_jFPFT78rBpXv9Z3U2YQ']));
+      return this.getQueryIdsWithFallbacks('AboutAccountQuery');
     }
 
     /**

@@ -35,8 +35,7 @@ export function withUserTweets<TBase extends AbstractConstructor<TwitterClientBa
     }
 
     private async getUserTweetsQueryIds(): Promise<string[]> {
-      const primary = await this.getQueryId('UserTweets');
-      return Array.from(new Set([primary, 'Wms1GvIiHXAPBaCr9KblaA']));
+      return this.getQueryIdsWithFallbacks('UserTweets');
     }
 
     /**

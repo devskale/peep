@@ -52,3 +52,17 @@ export const QUERY_IDS: Record<OperationName, string> = {
 };
 
 export const TARGET_QUERY_ID_OPERATIONS = Object.keys(FALLBACK_QUERY_IDS) as Array<OperationName>;
+
+/**
+ * Additional fallback query IDs beyond the primary FALLBACK_QUERY_IDS.
+ * These provide extra resilience when the primary and baked-in fallback
+ * both return 404. The helper `getQueryIdsWithFallbacks()` merges
+ * the runtime/baked-in ID with these extras.
+ */
+export const EXTRA_QUERY_ID_FALLBACKS: Partial<Record<OperationName, string[]>> = {
+  TweetDetail: ['aFvUsJm2c-oDkJV75blV6g'],
+  SearchTimeline: ['5h0kNbk3ii97rmfY6CdgAA', 'Tp1sewRU1AsZpBWhqCZicQ'],
+  Bookmarks: ['tmd4ifV8RHltzn8ymGg1aw'],
+  CreateFriendship: ['OPwKc1HXnBT_bWXfAlo-9g'],
+  DestroyFriendship: ['8h9JVdV8dlSyqyRDJEPCsA'],
+};
