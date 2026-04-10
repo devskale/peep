@@ -1,5 +1,4 @@
 import type { AbstractConstructor, Mixin, TwitterClientBase } from './twitter-client-base.js';
-import { TWITTER_API_BASE } from './twitter-client-constants.js';
 import { buildExploreFeatures } from './twitter-client-features.js';
 import type { SearchResult, TweetData } from './twitter-client-types.js';
 
@@ -146,7 +145,7 @@ export function withNews<TBase extends AbstractConstructor<TwitterClientBase>>(
       aiOnly: boolean,
       includeRaw: boolean,
     ): Promise<NewsItem[]> {
-      const queryId = await this.getQueryId('GenericTimelineById');
+      const queryIds = await this.getQueryIdsWithFallbacks('GenericTimelineById');
       const features = buildExploreFeatures();
 
       const variables = {
@@ -155,43 +154,40 @@ export function withNews<TBase extends AbstractConstructor<TwitterClientBase>>(
         includePromotedContent: false,
       };
 
-      const params = new URLSearchParams({
-        variables: JSON.stringify(variables),
-        features: JSON.stringify(features),
-      });
+      const result = await this.graphqlFetchWithRefresh(
+        {
+          operationName: 'GenericTimelineById',
+          queryIds,
+          variables,
+          features,
+          method: 'GET',
+        },
+        (json) => {
+          // Debug: save response if PEEP_DEBUG_JSON is set
+          if (process.env.PEEP_DEBUG_JSON) {
+            const debugJsonPath = process.env.PEEP_DEBUG_JSON;
+            import('node:fs/promises').then((fs) => {
+              const debugPath = debugJsonPath.replace('.json', `-${tabName}.json`);
+              fs.writeFile(debugPath, JSON.stringify(json, null, 2)).catch(() => {});
+            });
+          }
 
-      const url = `${TWITTER_API_BASE}/${queryId}/GenericTimelineById?${params.toString()}`;
+          // GQL-level errors are handled by the error checker;
+          // here we just need to confirm the data shape exists.
+          const timeline = (json as Record<string, unknown>)?.data as Record<string, unknown> | undefined;
+          const tl = timeline?.timeline as Record<string, unknown> | undefined;
+          if (!tl?.timeline) {
+            return undefined; // trigger fallback to next query ID
+          }
+          return this.parseTimelineTabItems(json, tabName, maxCount, aiOnly, includeRaw);
+        },
+      );
 
-      const response = await this.fetchWithTimeout(url, {
-        method: 'GET',
-        headers: this.getHeaders(),
-      });
-
-      if (!response.ok) {
-        const text = await response.text();
-        throw new Error(`HTTP ${response.status}: ${text.slice(0, 200)}`);
+      if (!result.success) {
+        throw new Error(result.error);
       }
 
-      const data = (await response.json()) as {
-        // biome-ignore lint/suspicious/noExplicitAny: API response structure is complex
-        data?: any;
-        // biome-ignore lint/suspicious/noExplicitAny: API errors can have any structure
-        errors?: Array<{ message: string; code?: number; [key: string]: any }>;
-      };
-
-      // Debug: save response if PEEP_DEBUG_JSON is set
-      if (process.env.PEEP_DEBUG_JSON) {
-        const fs = await import('node:fs/promises');
-        const debugPath = process.env.PEEP_DEBUG_JSON.replace('.json', `-${tabName}.json`);
-        await fs.writeFile(debugPath, JSON.stringify(data, null, 2)).catch(() => {});
-      }
-
-      if (data.errors && data.errors.length > 0) {
-        throw new Error(data.errors.map((e) => e.message).join('; '));
-      }
-
-      // Parse timeline response
-      return this.parseTimelineTabItems(data, tabName, maxCount, aiOnly, includeRaw);
+      return result.data;
     }
 
     /**
