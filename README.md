@@ -8,6 +8,9 @@ stolen from @steipete/bird, which is now deprecated.
 This project uses X/Twitter's **undocumented** web GraphQL API (and cookie auth). X can change endpoints, query IDs,
 and anti-bot behavior at any time - **expect this to break without notice**.
 
+- [Official X API v2 docs](https://docs.x.com/x-api/introduction) — X's public REST API (pay-per-use; Lists not yet available)
+- [TwitterInternalAPIDocument](https://github.com/fa0311/TwitterInternalAPIDocument) — community-maintained reference for the internal GraphQL API used by X's web client (query IDs, feature flags, operation signatures)
+
 **Strong recommendation: Do not use peep to tweet. You will hit blocks very quickly. Use it to read tweets.
 Bots are not welcome on X/Twitter. If you absolutely have to, use browser automation instead, or pay for the Twitter API to create tweets.**
 
@@ -418,7 +421,7 @@ The codebase went through 6 refactoring passes on the `refactor/centralize-featu
 
 **Feature flag correctness**: Each refactored `build*Features()` builder was verified byte-identical to the original by a script that applies `applyFeatureOverrides()` to both the original inline object and the new spread-based object, then diffs all keys/values. No builder produces a different flag set.
 
-**Known issue — `peep lists` / `peep lists --member-of`**: Both commands fail with `BadRequest: com.twitter.strato.serialization.DecodeException`. This is an X server-side issue (response can't be deserialized) — confirmed present on `main` before any refactoring. Feature flags were verified identical (43 flags). The `ListOwnerships` and `ListMemberships` query IDs may have rotated or X may have changed the response schema. `peep list-timeline` is unaffected.
+**Fixed — `peep lists` / `peep lists --member-of` DecodeException**: These commands previously failed with `BadRequest: com.twitter.strato.serialization.DecodeException`. The root cause was X's server returning a GraphQL error on the non-essential `default_banner_media_results` field of list entries — the actual list data was valid. Fixed by using a permissive error checker that tolerates `DecodeException` on media paths. Query IDs were also updated to the latest values from [TwitterInternalAPIDocument](https://github.com/fa0311/TwitterInternalAPIDocument).
 
 **Remaining `fetchWithTimeout` calls** (intentionally not GraphQL): REST/v1 endpoints for media uploads, legacy status updates, REST follow/unfollow, and REST user lookup — these use a different auth and response format.
 
@@ -433,6 +436,13 @@ Potential improvements for future work:
 - **Unified error handling**: Standardize error types across all commands for consistent `--json` error output
 - **Pagination for lists commands**: `peep lists` and `peep list-timeline` don't yet support `--cursor`/`--max-pages` pagination
 - **Test coverage for CLI commands**: Current tests cover the library layer; CLI integration tests would catch command-level regressions
+
+## References
+
+- [X API v2 docs](https://docs.x.com/x-api/introduction) — Official REST API (pay-per-use; Lists not yet available)
+- [TwitterInternalAPIDocument](https://github.com/fa0311/TwitterInternalAPIDocument) — Community-maintained internal GraphQL API reference (query IDs, feature flags, operation signatures)
+- [GraphQL API deep-dive](https://deepwiki.com/fa0311/TwitterInternalAPIDocument/3.1-graphql-api) — Detailed breakdown of X's GraphQL request format, feature switches, and error handling
+- [twitter-graphql-scraper](https://github.com/she-llac/twitter-graphql-scraper) — Tool to extract current query IDs from X's frontend JS bundles
 
 ## Notes
 

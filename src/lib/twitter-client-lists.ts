@@ -91,6 +91,49 @@ function parseListsFromInstructions(
   return lists;
 }
 
+/**
+ * Error checker for list operations that tolerates DecodeException errors
+ * on non-essential fields like `default_banner_media_results`.
+ * X's server sometimes fails to serialize media results for list banners,
+ * but the list data itself is still valid.
+ */
+function listErrorChecker(json: Record<string, unknown>): string | { message: string; retry: boolean } | undefined {
+  const errors = json.errors;
+  if (!Array.isArray(errors) || errors.length === 0) {
+    return undefined;
+  }
+
+  // Check if ALL errors are DecodeExceptions on non-essential paths
+  const nonEssentialErrors = errors.filter((e: unknown) => {
+    if (typeof e !== 'object' || e === null) return false;
+    const err = e as Record<string, unknown>;
+    const message = String(err.message ?? '');
+    const path = err.path;
+    // DecodeException on default_banner_media_results is non-essential
+    return message.includes('DecodeException') &&
+      Array.isArray(path) &&
+      path.some((p: unknown) => String(p).includes('default_banner_media_results'));
+  });
+
+  // If all errors are non-essential DecodeExceptions, ignore them
+  if (nonEssentialErrors.length === errors.length) {
+    return undefined;
+  }
+
+  // Otherwise, report the errors normally
+  const messages = errors
+    .map((e: unknown) =>
+      typeof e === 'object' && e !== null && 'message' in e
+        ? String((e as { message: string }).message)
+        : undefined,
+    )
+    .filter((m): m is string => typeof m === 'string');
+  if (messages.length > 0) {
+    return messages.join(', ');
+  }
+  return undefined;
+}
+
 export function withLists<TBase extends AbstractConstructor<TwitterClientBase>>(
   Base: TBase,
 ): Mixin<TBase, TwitterClientListMethods> {
@@ -147,6 +190,7 @@ export function withLists<TBase extends AbstractConstructor<TwitterClientBase>>(
           features: buildListsFeatures(),
         },
         parseLists,
+        listErrorChecker,
       );
 
       if (result.success) {
@@ -190,6 +234,7 @@ export function withLists<TBase extends AbstractConstructor<TwitterClientBase>>(
           features: buildListsFeatures(),
         },
         parseLists,
+        listErrorChecker,
       );
 
       if (result.success) {
