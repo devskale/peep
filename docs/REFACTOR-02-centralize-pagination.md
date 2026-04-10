@@ -1,7 +1,7 @@
 # Refactor #2: Centralize Tweet Pagination Loop
 
 **Branch:** `refactor/centralize-pagination`
-**Status:** 🟡 In Progress
+**Status:** ✅ Complete
 
 ## Problem
 
@@ -9,59 +9,36 @@ The tweet pagination loop is copy-pasted across **8 methods in 5 files**.
 Every one does: `pageSize=20` → `seen` set → `while (limit)` → `fetchPage(count, cursor)`
 → dedup by id → check cursor repeat/empty → check maxPages → accumulate.
 
-An existing `paginateCursor()` utility in `src/lib/paginate-cursor.ts` handles
-cursor-based pagination but lacks:
-- A `limit` cap (stop after N items collected)
-- Passing `pageCount` to `fetchPage` (some APIs need the count as a variable)
-- Stopping on empty pages or pages with only duplicates
+An existing `paginateCursor()` utility handled cursor-based pagination for
+`tweet-detail.ts` but lacked a `limit` cap and `pageCount` parameter.
 
-### Duplication inventory
+## Checklist
 
-| File | Method | Has limit? | Has pageDelay? | Has maxPages? |
-|------|--------|-----------|----------------|---------------|
-| `timelines.ts` | `getLikesPaged` | ✅ | ❌ | ✅ |
-| `timelines.ts` | `getBookmarksPaged` | ✅ | ❌ | ✅ |
-| `timelines.ts` | `getBookmarkFolderTimelinePaged` | ✅ | ❌ | ✅ |
-| `search.ts` | `searchPaged` | ✅ | ❌ | ✅ |
-| `home.ts` | `fetchHomeTimeline` | ✅ | ❌ | ❌ |
-| `user-tweets.ts` | `getUserTweetsPaged` | ✅ | ✅ | ✅ |
-| `lists.ts` | `getListTimelinePaged` | ✅ | ❌ | ✅ |
-| `tweet-detail.ts` | `getRepliesPaged` | ❌ | ✅ | ✅ |
-| `tweet-detail.ts` | `getThreadPaged` | ❌ | ✅ | ✅ |
+### Phase 1: Extend `paginateCursor` ✅
 
-### Differences from existing `paginateCursor`
+- [x] Add optional `limit` and `pageSize` fields to options
+- [x] When `limit` is set, `fetchPage` receives `(count, cursor)` instead of `(cursor)`
+- [x] Loop stops when `items.length >= limit`
+- [x] Stops on empty pages or all-duplicate pages (for limited pagination)
+- [x] Unlimited pagination preserves old behavior (backward-compatible)
+- [x] TypeScript discriminated union for clean type narrowing
 
-1. **`limit`** — stops when items collected >= limit
-2. **`pageCount`** — fetchPage receives `(count, cursor)` not just `(cursor)`
-3. **Empty page stop** — stops when `page.items.length === 0` or all duplicates
-4. **`tweet-detail.ts`** uses `paginateCursor` already (no limit, just cursor-based)
+### Phase 2: Migrate 8 methods ✅
 
-## Plan
+- [x] `timelines.ts` — getLikesPaged, getBookmarksPaged, getBookmarkFolderTimelinePaged
+- [x] `search.ts` — searchPaged
+- [x] `home.ts` — fetchHomeTimeline
+- [x] `user-tweets.ts` — getUserTweetsPaged
+- [x] `lists.ts` — getListTimelinePaged
+- [x] `tweet-detail.ts` — already used paginateCursor (unchanged)
 
-### Phase 1: Extend `paginateCursor` to support `limit` and `pageCount`
+### Phase 3: Cleanup ✅
 
-Add optional `limit` and `pageSize` fields. When set:
-- `fetchPage` signature becomes `(count: number, cursor?: string) => CursorPage<T>`
-- Loop stops when `items.length >= limit`
-- Each page's count = `min(pageSize, limit - items.length)`
+- [x] All 434 tests pass
+- [x] Build succeeds, `peep whoami` works
+- [x] Lint clean
 
-Backward-compatible: existing callers without `limit`/`pageSize` work unchanged.
+## Results
 
-### Phase 2: Migrate 8 methods to use extended `paginateCursor`
-
-Replace inline loops in:
-1. `timelines.ts` — 3 methods (likes, bookmarks, bookmark-folder)
-2. `search.ts` — 1 method
-3. `home.ts` — 1 method
-4. `user-tweets.ts` — 1 method
-5. `lists.ts` — 1 method
-
-### Phase 3: Cleanup
-
-- Remove any dead code
-- Update tests
-- Run linter
-
-## Estimated line reduction
-
-~150-200 lines removed across 5 files.
+**~240 lines removed** across 5 files (686 removed, 447 added).
+Combined with Refactor #1: **435 net lines removed** across 22 files.
