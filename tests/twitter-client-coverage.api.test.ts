@@ -95,7 +95,7 @@ describe('TwitterClient API coverage', () => {
       const result = await client.tweet('hi');
 
       expect(result.success).toBe(false);
-      expect(result.error).toContain('no ID');
+      expect(result.error).toContain('Tweet created but no ID returned');
     });
   });
 
@@ -207,7 +207,7 @@ describe('TwitterClient API coverage', () => {
       const result = await client.getBookmarks(1);
 
       expect(result.success).toBe(false);
-      expect(result.error).toBe('Unknown error fetching bookmarks');
+      expect(result.error).toBe('Unknown error for Bookmarks');
     });
 
     it('returns the second attempt error after 404s', async () => {
@@ -265,7 +265,7 @@ describe('TwitterClient API coverage', () => {
       const result = await client.getFollowing('123', 1);
 
       expect(result.success).toBe(false);
-      expect(result.error).toBe('Unknown error fetching following');
+      expect(result.error).toBe('Unknown error for Following');
     });
 
     it('returns the second attempt error after 404s', async () => {
@@ -348,7 +348,7 @@ describe('TwitterClient API coverage', () => {
       const result = await client.getLikes(1);
 
       expect(result.success).toBe(false);
-      expect(result.error).toBe('Unknown error fetching likes');
+      expect(result.error).toBe('Unknown error for Likes');
     });
 
     it('returns the second attempt error after 404s', async () => {
@@ -422,7 +422,7 @@ describe('TwitterClient API coverage', () => {
       const result = await client.getBookmarkFolderTimeline('123', 1);
 
       expect(result.success).toBe(false);
-      expect(result.error).toBe('Unknown error fetching bookmark folder');
+      expect(result.error).toBe('Unknown error for BookmarkFolderTimeline');
     });
 
     it('returns the second attempt error after 404s', async () => {

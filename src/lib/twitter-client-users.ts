@@ -1,10 +1,5 @@
 import type { AbstractConstructor, Mixin, TwitterClientBase } from './twitter-client-base.js';
-import {
-  SETTINGS_NAME_REGEX,
-  SETTINGS_SCREEN_NAME_REGEX,
-  SETTINGS_USER_ID_REGEX,
-  TWITTER_API_BASE,
-} from './twitter-client-constants.js';
+import { SETTINGS_NAME_REGEX, SETTINGS_SCREEN_NAME_REGEX, SETTINGS_USER_ID_REGEX } from './twitter-client-constants.js';
 import { buildFollowingFeatures } from './twitter-client-features.js';
 import type { CurrentUserResult, FollowingResult, TwitterUser } from './twitter-client-types.js';
 import { extractCursorFromInstructions, parseUsersFromInstructions } from './twitter-client-utils.js';
@@ -308,84 +303,37 @@ export function withUsers<TBase extends AbstractConstructor<TwitterClientBase>>(
         variables.cursor = cursor;
       }
 
-      const features = buildFollowingFeatures();
+      const queryIds = await this.getFollowingQueryIds();
 
-      const params = new URLSearchParams({
-        variables: JSON.stringify(variables),
-        features: JSON.stringify(features),
-      });
+      type UsersData = { users: TwitterUser[]; nextCursor?: string };
 
-      const tryOnce = async () => {
-        let lastError: string | undefined;
-        let had404 = false;
-        const queryIds = await this.getFollowingQueryIds();
-
-        for (const queryId of queryIds) {
-          const url = `${TWITTER_API_BASE}/${queryId}/Following?${params.toString()}`;
-
-          try {
-            const response = await this.fetchWithTimeout(url, {
-              method: 'GET',
-              headers: this.getHeaders(),
-            });
-
-            if (response.status === 404) {
-              had404 = true;
-              lastError = `HTTP ${response.status}`;
-              continue;
-            }
-
-            if (!response.ok) {
-              const text = await response.text();
-              return { success: false as const, error: `HTTP ${response.status}: ${text.slice(0, 200)}`, had404 };
-            }
-
-            const data = (await response.json()) as {
-              data?: {
-                user?: {
-                  result?: {
-                    timeline?: {
-                      timeline?: {
-                        instructions?: Array<{ type?: string; entries?: Array<unknown> }>;
-                      };
-                    };
-                  };
-                };
-              };
-              errors?: Array<{ message: string }>;
-            };
-
-            if (data.errors && data.errors.length > 0) {
-              return { success: false as const, error: data.errors.map((e) => e.message).join(', '), had404 };
-            }
-
-            const instructions = data.data?.user?.result?.timeline?.timeline?.instructions;
-            const users = parseUsersFromInstructions(instructions);
-            const nextCursor = extractCursorFromInstructions(
-              instructions as Array<{ entries?: Array<{ content?: unknown }> }> | undefined,
-            );
-
-            return { success: true as const, users, nextCursor, had404 };
-          } catch (error) {
-            lastError = error instanceof Error ? error.message : String(error);
-          }
-        }
-
-        return { success: false as const, error: lastError ?? 'Unknown error fetching following', had404 };
+      const parseUsers = (json: Record<string, unknown>): UsersData | undefined => {
+        const data = json.data as Record<string, unknown> | undefined;
+        const user = data?.user as Record<string, unknown> | undefined;
+        const result = user?.result as Record<string, unknown> | undefined;
+        const timeline = result?.timeline as Record<string, unknown> | undefined;
+        const tl = timeline?.timeline as Record<string, unknown> | undefined;
+        const instructions = tl?.instructions as Array<Record<string, unknown>> | undefined;
+        const users = parseUsersFromInstructions(instructions as Parameters<typeof parseUsersFromInstructions>[0]);
+        const nextCursor = extractCursorFromInstructions(
+          instructions as Parameters<typeof extractCursorFromInstructions>[0],
+        );
+        return { users, nextCursor };
       };
 
-      const { result, refreshed } = await this.withRefreshedQueryIdsOn404(tryOnce);
+      const result = await this.graphqlFetchWithRefresh<UsersData>(
+        { operationName: 'Following', queryIds, variables, features: buildFollowingFeatures() },
+        parseUsers,
+      );
+
       if (result.success) {
-        return { success: true, users: result.users, nextCursor: result.nextCursor };
+        return { success: true, users: result.data.users, nextCursor: result.data.nextCursor };
       }
 
-      if (refreshed) {
-        // GraphQL Following can also return 404 (queryId churn / endpoint flakiness).
-        // Fallback to the internal v1.1 REST endpoint used by the web client (cookie-auth; no dev API key).
-        const restAttempt = await this.getFollowingViaRest(userId, count, cursor);
-        if (restAttempt.success) {
-          return restAttempt;
-        }
+      // If we refreshed and it still failed, try REST fallback
+      const restAttempt = await this.getFollowingViaRest(userId, count, cursor);
+      if (restAttempt.success) {
+        return restAttempt;
       }
 
       return { success: false, error: result.error };
@@ -405,84 +353,37 @@ export function withUsers<TBase extends AbstractConstructor<TwitterClientBase>>(
         variables.cursor = cursor;
       }
 
-      const features = buildFollowingFeatures();
+      const queryIds = await this.getFollowersQueryIds();
 
-      const params = new URLSearchParams({
-        variables: JSON.stringify(variables),
-        features: JSON.stringify(features),
-      });
+      type UsersData = { users: TwitterUser[]; nextCursor?: string };
 
-      const tryOnce = async () => {
-        let lastError: string | undefined;
-        let had404 = false;
-        const queryIds = await this.getFollowersQueryIds();
-
-        for (const queryId of queryIds) {
-          const url = `${TWITTER_API_BASE}/${queryId}/Followers?${params.toString()}`;
-
-          try {
-            const response = await this.fetchWithTimeout(url, {
-              method: 'GET',
-              headers: this.getHeaders(),
-            });
-
-            if (response.status === 404) {
-              had404 = true;
-              lastError = `HTTP ${response.status}`;
-              continue;
-            }
-
-            if (!response.ok) {
-              const text = await response.text();
-              return { success: false as const, error: `HTTP ${response.status}: ${text.slice(0, 200)}`, had404 };
-            }
-
-            const data = (await response.json()) as {
-              data?: {
-                user?: {
-                  result?: {
-                    timeline?: {
-                      timeline?: {
-                        instructions?: Array<{ type?: string; entries?: Array<unknown> }>;
-                      };
-                    };
-                  };
-                };
-              };
-              errors?: Array<{ message: string }>;
-            };
-
-            if (data.errors && data.errors.length > 0) {
-              return { success: false as const, error: data.errors.map((e) => e.message).join(', '), had404 };
-            }
-
-            const instructions = data.data?.user?.result?.timeline?.timeline?.instructions;
-            const users = parseUsersFromInstructions(instructions);
-            const nextCursor = extractCursorFromInstructions(
-              instructions as Array<{ entries?: Array<{ content?: unknown }> }> | undefined,
-            );
-
-            return { success: true as const, users, nextCursor, had404 };
-          } catch (error) {
-            lastError = error instanceof Error ? error.message : String(error);
-          }
-        }
-
-        return { success: false as const, error: lastError ?? 'Unknown error fetching followers', had404 };
+      const parseUsers = (json: Record<string, unknown>): UsersData | undefined => {
+        const data = json.data as Record<string, unknown> | undefined;
+        const user = data?.user as Record<string, unknown> | undefined;
+        const result = user?.result as Record<string, unknown> | undefined;
+        const timeline = result?.timeline as Record<string, unknown> | undefined;
+        const tl = timeline?.timeline as Record<string, unknown> | undefined;
+        const instructions = tl?.instructions as Array<Record<string, unknown>> | undefined;
+        const users = parseUsersFromInstructions(instructions as Parameters<typeof parseUsersFromInstructions>[0]);
+        const nextCursor = extractCursorFromInstructions(
+          instructions as Parameters<typeof extractCursorFromInstructions>[0],
+        );
+        return { users, nextCursor };
       };
 
-      const { result, refreshed } = await this.withRefreshedQueryIdsOn404(tryOnce);
+      const result = await this.graphqlFetchWithRefresh<UsersData>(
+        { operationName: 'Followers', queryIds, variables, features: buildFollowingFeatures() },
+        parseUsers,
+      );
+
       if (result.success) {
-        return { success: true, users: result.users, nextCursor: result.nextCursor };
+        return { success: true, users: result.data.users, nextCursor: result.data.nextCursor };
       }
 
-      if (refreshed) {
-        // GraphQL Followers regularly returns 404 (queryId churn / endpoint flakiness).
-        // Fallback to the internal v1.1 REST endpoint used by the web client (cookie-auth; no dev API key).
-        const restAttempt = await this.getFollowersViaRest(userId, count, cursor);
-        if (restAttempt.success) {
-          return restAttempt;
-        }
+      // If we refreshed and it still failed, try REST fallback
+      const restAttempt = await this.getFollowersViaRest(userId, count, cursor);
+      if (restAttempt.success) {
+        return restAttempt;
       }
 
       return { success: false, error: result.error };

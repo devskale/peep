@@ -1,14 +1,9 @@
 import type { AbstractConstructor, Mixin, TwitterClientBase } from './twitter-client-base.js';
-import { TWITTER_API_BASE } from './twitter-client-constants.js';
 import { buildHomeTimelineFeatures } from './twitter-client-features.js';
-import type { GraphqlTweetResult, SearchResult, TweetData } from './twitter-client-types.js';
+import type { SearchResult, TweetData } from './twitter-client-types.js';
 import { extractCursorFromInstructions, parseTweetsFromInstructions } from './twitter-client-utils.js';
 
 const QUERY_UNSPECIFIED_REGEX = /query:\s*unspecified/i;
-
-function isQueryIdMismatch(errors: Array<{ message?: string }>): boolean {
-  return errors.some((error) => QUERY_UNSPECIFIED_REGEX.test(error.message ?? ''));
-}
 
 /** Options for home timeline fetch methods */
 export interface HomeTimelineFetchOptions {
@@ -66,112 +61,71 @@ export function withHome<TBase extends AbstractConstructor<TwitterClientBase>>(
       const tweets: TweetData[] = [];
       let cursor: string | undefined;
 
-      const fetchPage = async (pageCount: number, pageCursor?: string) => {
-        let lastError: string | undefined;
-        let had404 = false;
+      type TimelineData = { tweets: TweetData[]; cursor?: string };
+
+      const fetchPage = async (pageCount: number, pageCursor?: string): Promise<TimelineData | string> => {
         const queryIds =
           operation === 'HomeTimeline'
             ? await this.getHomeTimelineQueryIds()
             : await this.getHomeLatestTimelineQueryIds();
 
-        for (const queryId of queryIds) {
-          const variables = {
-            count: pageCount,
-            includePromotedContent: true,
-            latestControlAvailable: true,
-            requestContext: 'launch',
-            withCommunity: true,
-            ...(pageCursor ? { cursor: pageCursor } : {}),
-          };
+        const parseHomeTimeline = (json: Record<string, unknown>): TimelineData | undefined => {
+          const data = json.data as Record<string, unknown> | undefined;
+          const home = data?.home as Record<string, unknown> | undefined;
+          const homeTimelineUrt = home?.home_timeline_urt as Record<string, unknown> | undefined;
+          const instructions = homeTimelineUrt?.instructions as Array<Record<string, unknown>> | undefined;
+          const pageTweets = parseTweetsFromInstructions(
+            instructions as Parameters<typeof parseTweetsFromInstructions>[0],
+            { quoteDepth: this.quoteDepth, includeRaw },
+          );
+          const nextCursor = extractCursorFromInstructions(
+            instructions as Parameters<typeof extractCursorFromInstructions>[0],
+          );
+          return { tweets: pageTweets, cursor: nextCursor };
+        };
 
-          const params = new URLSearchParams({
-            variables: JSON.stringify(variables),
-            features: JSON.stringify(features),
-          });
-
-          const url = `${TWITTER_API_BASE}/${queryId}/${operation}?${params.toString()}`;
-
-          try {
-            const response = await this.fetchWithTimeout(url, {
-              method: 'GET',
-              headers: this.getHeaders(),
-            });
-
-            if (response.status === 404) {
-              had404 = true;
-              lastError = `HTTP ${response.status}`;
-              continue;
-            }
-
-            if (!response.ok) {
-              const text = await response.text();
-              return { success: false as const, error: `HTTP ${response.status}: ${text.slice(0, 200)}`, had404 };
-            }
-
-            const data = (await response.json()) as {
-              data?: {
-                home?: {
-                  home_timeline_urt?: {
-                    instructions?: Array<{
-                      entries?: Array<{
-                        content?: {
-                          itemContent?: {
-                            tweet_results?: {
-                              result?: GraphqlTweetResult;
-                            };
-                          };
-                        };
-                      }>;
-                    }>;
-                  };
-                };
-              };
-              errors?: Array<{ message: string }>;
-            };
-
-            if (data.errors && data.errors.length > 0) {
-              const errorMessage = data.errors.map((e) => e.message).join(', ');
-              return {
-                success: false as const,
-                error: errorMessage,
-                had404: had404 || isQueryIdMismatch(data.errors),
-              };
-            }
-
-            const instructions = data.data?.home?.home_timeline_urt?.instructions;
-            const pageTweets = parseTweetsFromInstructions(instructions, { quoteDepth: this.quoteDepth, includeRaw });
-            const nextCursor = extractCursorFromInstructions(instructions);
-
-            return { success: true as const, tweets: pageTweets, cursor: nextCursor, had404 };
-          } catch (error) {
-            lastError = error instanceof Error ? error.message : String(error);
+        // Custom error checker: detect query unspecified (should trigger refresh)
+        const checkErrors = (json: Record<string, unknown>): string | undefined => {
+          const errors = json.errors as Array<{ message?: string }> | undefined;
+          if (!errors || errors.length === 0) {
+            return undefined;
           }
-        }
-
-        return { success: false as const, error: lastError ?? 'Unknown error fetching home timeline', had404 };
-      };
-
-      const fetchWithRefresh = async (pageCount: number, pageCursor?: string) => {
-        const firstAttempt = await fetchPage(pageCount, pageCursor);
-        if (firstAttempt.success) {
-          return firstAttempt;
-        }
-        if (firstAttempt.had404) {
-          await this.refreshQueryIds();
-          const secondAttempt = await fetchPage(pageCount, pageCursor);
-          if (secondAttempt.success) {
-            return secondAttempt;
+          const errorMessage = errors.map((e) => e.message ?? 'Unknown error').join(', ');
+          if (QUERY_UNSPECIFIED_REGEX.test(errorMessage)) {
+            return '__query_id_mismatch__';
           }
-          return { success: false as const, error: secondAttempt.error };
+          return errorMessage;
+        };
+
+        const result = await this.graphqlFetchWithRefresh<TimelineData>(
+          {
+            operationName: operation,
+            queryIds,
+            variables: {
+              count: pageCount,
+              includePromotedContent: true,
+              latestControlAvailable: true,
+              requestContext: 'launch',
+              withCommunity: true,
+              ...(pageCursor ? { cursor: pageCursor } : {}),
+            },
+            features,
+          },
+          parseHomeTimeline,
+          checkErrors,
+        );
+
+        if (result.success) {
+          return result.data;
         }
-        return { success: false as const, error: firstAttempt.error };
+        return result.error;
       };
 
       while (tweets.length < count) {
         const pageCount = Math.min(pageSize, count - tweets.length);
-        const page = await fetchWithRefresh(pageCount, cursor);
-        if (!page.success) {
-          return { success: false, error: page.error };
+        const page = await fetchPage(pageCount, cursor);
+        if (typeof page === 'string') {
+          return { success: false, error: page };
         }
 
         let added = 0;

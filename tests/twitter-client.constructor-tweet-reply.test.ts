@@ -144,9 +144,10 @@ describe('TwitterClient tweet', () => {
     expect(mockFetch).toHaveBeenCalledTimes(3);
 
     const [firstUrl] = mockFetch.mock.calls[0];
-    const [thirdUrl] = mockFetch.mock.calls[2];
     expect(String(firstUrl)).toContain('/CreateTweet');
-    expect(String(thirdUrl)).toBe('https://x.com/i/api/graphql');
+    // With unified retry, the 3rd call is the retry after refresh (specific URL), not generic POST
+    const [thirdUrl] = mockFetch.mock.calls[2];
+    expect(String(thirdUrl)).toContain('/CreateTweet');
   });
 
   it('should handle API errors', async () => {
@@ -217,7 +218,8 @@ describe('TwitterClient tweet', () => {
 
     expect(result.success).toBe(false);
     expect(result.error).toContain('(226)');
-    expect(result.error).toContain('fallback: HTTP 403');
+    expect(result.error).toContain('fallback:');
+    expect(result.error).toContain('HTTP 403');
     expect(mockFetch).toHaveBeenCalledTimes(2);
     expect(String(mockFetch.mock.calls[1][0])).toContain('statuses/update.json');
   });
@@ -247,7 +249,8 @@ describe('TwitterClient tweet', () => {
 
     expect(result.success).toBe(false);
     expect(result.error).toContain('(226)');
-    expect(result.error).toContain('fallback: Nope (999)');
+    expect(result.error).toContain('fallback:');
+    expect(result.error).toContain('Nope (999)');
   });
 
   it('surfaces statuses/update.json missing id when CreateTweet returns code 226', async () => {
@@ -273,7 +276,8 @@ describe('TwitterClient tweet', () => {
 
     expect(result.success).toBe(false);
     expect(result.error).toContain('(226)');
-    expect(result.error).toContain('fallback: Tweet created but no ID returned');
+    expect(result.error).toContain('fallback:');
+    expect(result.error).toContain('Tweet created but no ID returned');
   });
 
   it('should handle HTTP errors', async () => {

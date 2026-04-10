@@ -1,8 +1,66 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 import { runtimeQueryIds } from './runtime-query-ids.js';
-import { type OperationName, QUERY_IDS, TARGET_QUERY_ID_OPERATIONS } from './twitter-client-constants.js';
+import {
+  type OperationName,
+  QUERY_IDS,
+  TARGET_QUERY_ID_OPERATIONS,
+  TWITTER_API_BASE,
+} from './twitter-client-constants.js';
 import type { CurrentUserResult, TwitterClientOptions } from './twitter-client-types.js';
 import { normalizeQuoteDepth } from './twitter-client-utils.js';
+
+// ---------------------------------------------------------------------------
+// GraphQL fetch helpers — unified retry / refresh / fallback
+// ---------------------------------------------------------------------------
+
+/** Options for the base-class GraphQL fetch helpers. */
+export interface GqlFetchOptions {
+  /** GraphQL operation name (e.g. `TweetDetail`). Used to build the URL path. */
+  operationName: string;
+  /** Ordered list of query IDs to try. First success wins. */
+  queryIds: string[];
+  /** Variables to send (JSON-serialized into URL params or body). */
+  variables: Record<string, unknown>;
+  /** Feature flags. Included in both URL params and POST body when present. */
+  features?: Record<string, boolean>;
+  /** Field toggles. Included alongside features. */
+  fieldToggles?: Record<string, boolean>;
+  /** HTTP method. Defaults to `'GET'` (variables in URL params). */
+  method?: 'GET' | 'POST';
+  /** Extra headers merged on top of the standard JSON headers. */
+  extraHeaders?: Record<string, string>;
+  /** Raw body string for POST. When set, `variables`/`features`/`fieldToggles` are NOT auto-serialized. */
+  body?: string;
+  /** When true and all query IDs return 404, also try the generic POST endpoint. */
+  fallbackToGenericPost?: boolean;
+  /** When true, variables are sent in URL params even for POST requests. */
+  variablesInUrl?: boolean;
+}
+
+/** Result returned by the GraphQL fetch helpers. */
+export type GqlResult<T> = { success: true; data: T } | { success: false; error: string; had404: boolean };
+
+/** Callback that receives a successful JSON response and returns typed data. */
+export type GqlResponseParser<T> = (json: Record<string, unknown>) => T | undefined;
+
+/** Callback that receives a JSON response and returns an error string if the response is an error (non-404). */
+export type GqlErrorChecker = (json: Record<string, unknown>) => string | undefined;
+
+/** Default error checker: looks for a top-level `errors` array. */
+export const defaultGqlErrorChecker: GqlErrorChecker = (json) => {
+  const errors = json.errors;
+  if (Array.isArray(errors) && errors.length > 0) {
+    const messages = errors
+      .map((e: unknown) =>
+        typeof e === 'object' && e !== null && 'message' in e ? (e as { message: string }).message : undefined,
+      )
+      .filter((m): m is string => typeof m === 'string');
+    if (messages.length > 0) {
+      return messages.join(', ');
+    }
+  }
+  return undefined;
+};
 
 // biome-ignore lint/suspicious/noExplicitAny: TS mixin base constructor requirement.
 export type Constructor<T = object> = new (...args: any[]) => T;
@@ -59,18 +117,6 @@ export abstract class TwitterClientBase {
     } catch {
       // ignore refresh failures; callers will fall back to baked-in IDs
     }
-  }
-
-  protected async withRefreshedQueryIdsOn404<T extends { success: boolean; had404?: boolean }>(
-    attempt: () => Promise<T>,
-  ): Promise<{ result: T; refreshed: boolean }> {
-    const firstAttempt = await attempt();
-    if (firstAttempt.success || !firstAttempt.had404) {
-      return { result: firstAttempt, refreshed: false };
-    }
-    await this.refreshQueryIds();
-    const secondAttempt = await attempt();
-    return { result: secondAttempt, refreshed: true };
   }
 
   protected async getTweetDetailQueryIds(): Promise<string[]> {
@@ -141,6 +187,163 @@ export abstract class TwitterClientBase {
   protected getUploadHeaders(): Record<string, string> {
     // Note: do not set content-type; URLSearchParams/FormData need to set it (incl boundary) themselves.
     return this.getBaseHeaders();
+  }
+
+  // -----------------------------------------------------------------
+  // Unified GraphQL fetch with query-ID fallback (no auto-refresh)
+  // -----------------------------------------------------------------
+
+  /**
+   * Try each query ID in order. On 404 → try next ID. Returns the first
+   * successful parse or the last error. Does **not** refresh query IDs;
+   * wrap with `graphqlFetchWithRefresh()` for that.
+   */
+  protected async graphqlFetchWithRetry<T>(
+    opts: GqlFetchOptions,
+    parseResponse: GqlResponseParser<T>,
+    checkError?: GqlErrorChecker,
+  ): Promise<GqlResult<T>> {
+    const {
+      operationName,
+      queryIds,
+      variables,
+      features,
+      fieldToggles,
+      method = 'GET',
+      extraHeaders,
+      body: rawBody,
+      fallbackToGenericPost = false,
+    } = opts;
+
+    const errorChecker = checkError ?? defaultGqlErrorChecker;
+    const headers = { ...this.getHeaders(), ...extraHeaders };
+
+    // Build URL params (used for GET, and also sent alongside POST body)
+    const params = new URLSearchParams();
+    if (features) {
+      params.set('features', JSON.stringify(features));
+    }
+    if (fieldToggles) {
+      params.set('fieldToggles', JSON.stringify(fieldToggles));
+    }
+    if (method === 'GET' || opts.variablesInUrl) {
+      params.set('variables', JSON.stringify(variables));
+    }
+
+    let lastError: string | undefined;
+    let had404 = false;
+
+    for (const queryId of queryIds) {
+      const url = `${TWITTER_API_BASE}/${queryId}/${operationName}${params.toString() ? `?${params.toString()}` : ''}`;
+
+      try {
+        const response = await this.fetchWithTimeout(url, {
+          method,
+          headers,
+          // For POST: body includes variables/features/queryId (mirrors what X's web client sends)
+          body: method === 'POST' ? (rawBody ?? JSON.stringify({ variables, features, queryId })) : undefined,
+        });
+
+        if (response.status === 404) {
+          had404 = true;
+          lastError = `HTTP 404`;
+          continue;
+        }
+
+        if (!response.ok) {
+          const text = await response.text();
+          return { success: false, error: `HTTP ${response.status}: ${text.slice(0, 200)}`, had404 };
+        }
+
+        const json = (await response.json()) as Record<string, unknown>;
+
+        // Check for GraphQL-level errors
+        const gqlError = errorChecker(json);
+        if (gqlError) {
+          return { success: false, error: gqlError, had404 };
+        }
+
+        const parsed = parseResponse(json);
+        if (parsed !== undefined) {
+          return { success: true, data: parsed };
+        }
+
+        // Parser returned undefined — treat as error
+        lastError = `Could not parse response for ${operationName}`;
+      } catch (error) {
+        lastError = error instanceof Error ? error.message : String(error);
+      }
+    }
+
+    // If all query IDs 404'd and fallbackToGenericPost is enabled, try generic endpoint
+    if (had404 && fallbackToGenericPost) {
+      const genericUrl = `${TWITTER_API_BASE}`;
+      const genericBody = rawBody ?? JSON.stringify({ variables, features, queryId: queryIds[0] });
+
+      try {
+        const response = await this.fetchWithTimeout(genericUrl, {
+          method: 'POST',
+          headers,
+          body: genericBody,
+        });
+
+        if (response.ok) {
+          const json = (await response.json()) as Record<string, unknown>;
+          const gqlError = errorChecker(json);
+          if (gqlError) {
+            return { success: false, error: gqlError, had404 };
+          }
+          const parsed = parseResponse(json);
+          if (parsed !== undefined) {
+            return { success: true, data: parsed };
+          }
+          lastError = `Could not parse response from generic POST`;
+        } else {
+          const text = await response.text();
+          return { success: false, error: `HTTP ${response.status}: ${text.slice(0, 200)}`, had404 };
+        }
+      } catch (error) {
+        lastError = error instanceof Error ? error.message : String(error);
+      }
+    }
+
+    return { success: false, error: lastError ?? `Unknown error for ${operationName}`, had404 };
+  }
+
+  /**
+   * Wraps `graphqlFetchWithRetry` with automatic query-ID refresh on 404.
+   * This is the primary entry point for read/query operations.
+   */
+  protected async graphqlFetchWithRefresh<T>(
+    opts: GqlFetchOptions,
+    parseResponse: GqlResponseParser<T>,
+    checkError?: GqlErrorChecker,
+  ): Promise<GqlResult<T>> {
+    const first = await this.graphqlFetchWithRetry(opts, parseResponse, checkError);
+    if (first.success || !first.had404) {
+      return first;
+    }
+    await this.refreshQueryIds();
+    return this.graphqlFetchWithRetry(opts, parseResponse, checkError);
+  }
+
+  /**
+   * Like `graphqlFetchWithRefresh` but also tries a POST fallback to the
+   * generic GraphQL endpoint when all query IDs 404. Used for write
+   * mutations (tweet, like, retweet, bookmark, etc.).
+   */
+  protected async graphqlMutationWithRetry<T>(
+    opts: GqlFetchOptions,
+    parseResponse: GqlResponseParser<T>,
+    checkError?: GqlErrorChecker,
+  ): Promise<GqlResult<T>> {
+    const optsWithFallback: GqlFetchOptions = { ...opts, fallbackToGenericPost: true };
+    const first = await this.graphqlFetchWithRetry(optsWithFallback, parseResponse, checkError);
+    if (first.success || !first.had404) {
+      return first;
+    }
+    await this.refreshQueryIds();
+    return this.graphqlFetchWithRetry(optsWithFallback, parseResponse, checkError);
   }
 
   protected async ensureClientUserId(): Promise<void> {

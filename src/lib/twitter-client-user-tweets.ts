@@ -1,7 +1,6 @@
 import type { AbstractConstructor, Mixin, TwitterClientBase } from './twitter-client-base.js';
-import { TWITTER_API_BASE } from './twitter-client-constants.js';
 import { buildUserTweetsFeatures } from './twitter-client-features.js';
-import type { GraphqlTweetResult, SearchResult, TweetData } from './twitter-client-types.js';
+import type { SearchResult, TweetData } from './twitter-client-types.js';
 import { extractCursorFromInstructions, parseTweetsFromInstructions } from './twitter-client-utils.js';
 
 /** Options for user tweets fetch methods */
@@ -71,145 +70,50 @@ export function withUserTweets<TBase extends AbstractConstructor<TwitterClientBa
       const computedMaxPages = Math.max(1, Math.ceil(limit / pageSize));
       const effectiveMaxPages = Math.min(hardMaxPages, maxPages ?? computedMaxPages);
 
-      const fetchPage = async (pageCount: number, pageCursor?: string) => {
-        let lastError: string | undefined;
-        let had404 = false;
+      type UserTweetsData = { tweets: TweetData[]; cursor?: string };
+
+      const fetchPage = async (pageCount: number, pageCursor?: string): Promise<UserTweetsData | string> => {
         const queryIds = await this.getUserTweetsQueryIds();
 
-        const variables = {
-          userId,
-          count: pageCount,
-          includePromotedContent: false, // Filter out ads
-          withQuickPromoteEligibilityTweetFields: true,
-          withVoice: true,
-          ...(pageCursor ? { cursor: pageCursor } : {}),
+        const parseUserTweets = (json: Record<string, unknown>): UserTweetsData | undefined => {
+          const data = json.data as Record<string, unknown> | undefined;
+          const user = data?.user as Record<string, unknown> | undefined;
+          const result = user?.result as Record<string, unknown> | undefined;
+          const timeline = result?.timeline as Record<string, unknown> | undefined;
+          const tl = timeline?.timeline as Record<string, unknown> | undefined;
+          const instructions = tl?.instructions as Array<Record<string, unknown>> | undefined;
+          const pageTweets = parseTweetsFromInstructions(
+            instructions as Parameters<typeof parseTweetsFromInstructions>[0],
+            { quoteDepth: this.quoteDepth, includeRaw },
+          );
+          const pageCursor = extractCursorFromInstructions(
+            instructions as Parameters<typeof extractCursorFromInstructions>[0],
+          );
+          return { tweets: pageTweets, cursor: pageCursor };
         };
 
-        const fieldToggles = {
-          withArticlePlainText: false,
-        };
+        const result = await this.graphqlFetchWithRefresh<UserTweetsData>(
+          {
+            operationName: 'UserTweets',
+            queryIds,
+            variables: {
+              userId,
+              count: pageCount,
+              includePromotedContent: false,
+              withQuickPromoteEligibilityTweetFields: true,
+              withVoice: true,
+              ...(pageCursor ? { cursor: pageCursor } : {}),
+            },
+            features,
+            fieldToggles: { withArticlePlainText: false },
+          },
+          parseUserTweets,
+        );
 
-        const params = new URLSearchParams({
-          variables: JSON.stringify(variables),
-          features: JSON.stringify(features),
-          fieldToggles: JSON.stringify(fieldToggles),
-        });
-
-        for (const queryId of queryIds) {
-          const url = `${TWITTER_API_BASE}/${queryId}/UserTweets?${params.toString()}`;
-
-          try {
-            const response = await this.fetchWithTimeout(url, {
-              method: 'GET',
-              headers: this.getHeaders(),
-            });
-
-            if (response.status === 404) {
-              had404 = true;
-              lastError = `HTTP ${response.status}`;
-              continue;
-            }
-
-            if (!response.ok) {
-              const text = await response.text();
-              return { success: false as const, error: `HTTP ${response.status}: ${text.slice(0, 200)}`, had404 };
-            }
-
-            const data = (await response.json()) as {
-              data?: {
-                user?: {
-                  result?: {
-                    timeline?: {
-                      timeline?: {
-                        instructions?: Array<{
-                          type?: string;
-                          entries?: Array<{
-                            content?: {
-                              itemContent?: {
-                                tweet_results?: {
-                                  result?: GraphqlTweetResult;
-                                };
-                              };
-                              item?: {
-                                itemContent?: {
-                                  tweet_results?: {
-                                    result?: GraphqlTweetResult;
-                                  };
-                                };
-                              };
-                              items?: Array<{
-                                item?: {
-                                  itemContent?: {
-                                    tweet_results?: {
-                                      result?: GraphqlTweetResult;
-                                    };
-                                  };
-                                };
-                                itemContent?: {
-                                  tweet_results?: {
-                                    result?: GraphqlTweetResult;
-                                  };
-                                };
-                                content?: {
-                                  itemContent?: {
-                                    tweet_results?: {
-                                      result?: GraphqlTweetResult;
-                                    };
-                                  };
-                                };
-                              }>;
-                              cursorType?: string;
-                              value?: string;
-                            };
-                          }>;
-                        }>;
-                      };
-                    };
-                  };
-                };
-              };
-              errors?: Array<{ message: string }>;
-            };
-
-            if (data.errors && data.errors.length > 0) {
-              // Check for common errors
-              const errorMsg = data.errors.map((e) => e.message).join(', ');
-              if (errorMsg.includes('User has been suspended') || errorMsg.includes('User not found')) {
-                return { success: false as const, error: errorMsg, had404 };
-              }
-              // Some errors are non-fatal if we got data
-              if (!data.data?.user?.result?.timeline?.timeline?.instructions) {
-                return { success: false as const, error: errorMsg, had404 };
-              }
-            }
-
-            const instructions = data.data?.user?.result?.timeline?.timeline?.instructions;
-            const pageTweets = parseTweetsFromInstructions(instructions, { quoteDepth: this.quoteDepth, includeRaw });
-            const pageCursorValue = extractCursorFromInstructions(instructions);
-
-            return { success: true as const, tweets: pageTweets, cursor: pageCursorValue, had404 };
-          } catch (error) {
-            lastError = error instanceof Error ? error.message : String(error);
-          }
+        if (result.success) {
+          return result.data;
         }
-
-        return { success: false as const, error: lastError ?? 'Unknown error fetching user tweets', had404 };
-      };
-
-      const fetchWithRefresh = async (pageCount: number, pageCursor?: string) => {
-        const firstAttempt = await fetchPage(pageCount, pageCursor);
-        if (firstAttempt.success) {
-          return firstAttempt;
-        }
-        if (firstAttempt.had404) {
-          await this.refreshQueryIds();
-          const secondAttempt = await fetchPage(pageCount, pageCursor);
-          if (secondAttempt.success) {
-            return secondAttempt;
-          }
-          return { success: false as const, error: secondAttempt.error };
-        }
-        return { success: false as const, error: firstAttempt.error };
+        return result.error;
       };
 
       while (tweets.length < limit) {
@@ -220,9 +124,9 @@ export function withUserTweets<TBase extends AbstractConstructor<TwitterClientBa
 
         const remaining = limit - tweets.length;
         const pageCount = Math.min(pageSize, remaining);
-        const page = await fetchWithRefresh(pageCount, cursor);
-        if (!page.success) {
-          return { success: false, error: page.error };
+        const page = await fetchPage(pageCount, cursor);
+        if (typeof page === 'string') {
+          return { success: false, error: page };
         }
         pagesFetched += 1;
 
