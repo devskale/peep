@@ -1,3 +1,4 @@
+import { paginateCursor } from './paginate-cursor.js';
 import type { AbstractConstructor, Mixin, TwitterClientBase } from './twitter-client-base.js';
 import { buildHomeTimelineFeatures } from './twitter-client-features.js';
 import type { SearchResult, TweetData } from './twitter-client-types.js';
@@ -56,98 +57,72 @@ export function withHome<TBase extends AbstractConstructor<TwitterClientBase>>(
     ): Promise<SearchResult> {
       const { includeRaw = false } = options;
       const features = buildHomeTimelineFeatures();
-      const pageSize = 20;
-      const seen = new Set<string>();
-      const tweets: TweetData[] = [];
-      let cursor: string | undefined;
 
-      type TimelineData = { tweets: TweetData[]; cursor?: string };
+      const result = await paginateCursor<TweetData>({
+        limit: count,
+        getKey: (tweet) => tweet.id,
+        fetchPage: async (pageCount, pageCursor) => {
+          const queryIds =
+            operation === 'HomeTimeline'
+              ? await this.getHomeTimelineQueryIds()
+              : await this.getHomeLatestTimelineQueryIds();
 
-      const fetchPage = async (pageCount: number, pageCursor?: string): Promise<TimelineData | string> => {
-        const queryIds =
-          operation === 'HomeTimeline'
-            ? await this.getHomeTimelineQueryIds()
-            : await this.getHomeLatestTimelineQueryIds();
+          const parseHomeTimeline = (json: Record<string, unknown>) => {
+            const data = json.data as Record<string, unknown> | undefined;
+            const home = data?.home as Record<string, unknown> | undefined;
+            const homeTimelineUrt = home?.home_timeline_urt as Record<string, unknown> | undefined;
+            const instructions = homeTimelineUrt?.instructions as Array<Record<string, unknown>> | undefined;
+            const pageTweets = parseTweetsFromInstructions(
+              instructions as Parameters<typeof parseTweetsFromInstructions>[0],
+              { quoteDepth: this.quoteDepth, includeRaw },
+            );
+            const nextCursor = extractCursorFromInstructions(
+              instructions as Parameters<typeof extractCursorFromInstructions>[0],
+            );
+            return { items: pageTweets, cursor: nextCursor };
+          };
 
-        const parseHomeTimeline = (json: Record<string, unknown>): TimelineData | undefined => {
-          const data = json.data as Record<string, unknown> | undefined;
-          const home = data?.home as Record<string, unknown> | undefined;
-          const homeTimelineUrt = home?.home_timeline_urt as Record<string, unknown> | undefined;
-          const instructions = homeTimelineUrt?.instructions as Array<Record<string, unknown>> | undefined;
-          const pageTweets = parseTweetsFromInstructions(
-            instructions as Parameters<typeof parseTweetsFromInstructions>[0],
-            { quoteDepth: this.quoteDepth, includeRaw },
-          );
-          const nextCursor = extractCursorFromInstructions(
-            instructions as Parameters<typeof extractCursorFromInstructions>[0],
-          );
-          return { tweets: pageTweets, cursor: nextCursor };
-        };
+          const checkErrors = (json: Record<string, unknown>): string | undefined => {
+            const errors = json.errors as Array<{ message?: string }> | undefined;
+            if (!errors || errors.length === 0) {
+              return undefined;
+            }
+            const errorMessage = errors.map((e) => e.message ?? 'Unknown error').join(', ');
+            if (QUERY_UNSPECIFIED_REGEX.test(errorMessage)) {
+              return '__query_id_mismatch__';
+            }
+            return errorMessage;
+          };
 
-        // Custom error checker: detect query unspecified (should trigger refresh)
-        const checkErrors = (json: Record<string, unknown>): string | undefined => {
-          const errors = json.errors as Array<{ message?: string }> | undefined;
-          if (!errors || errors.length === 0) {
-            return undefined;
-          }
-          const errorMessage = errors.map((e) => e.message ?? 'Unknown error').join(', ');
-          if (QUERY_UNSPECIFIED_REGEX.test(errorMessage)) {
-            return '__query_id_mismatch__';
-          }
-          return errorMessage;
-        };
-
-        const result = await this.graphqlFetchWithRefresh<TimelineData>(
-          {
-            operationName: operation,
-            queryIds,
-            variables: {
-              count: pageCount,
-              includePromotedContent: true,
-              latestControlAvailable: true,
-              requestContext: 'launch',
-              withCommunity: true,
-              ...(pageCursor ? { cursor: pageCursor } : {}),
+          const gqlResult = await this.graphqlFetchWithRefresh(
+            {
+              operationName: operation,
+              queryIds,
+              variables: {
+                count: pageCount,
+                includePromotedContent: true,
+                latestControlAvailable: true,
+                requestContext: 'launch',
+                withCommunity: true,
+                ...(pageCursor ? { cursor: pageCursor } : {}),
+              },
+              features,
             },
-            features,
-          },
-          parseHomeTimeline,
-          checkErrors,
-        );
+            parseHomeTimeline,
+            checkErrors,
+          );
 
-        if (result.success) {
-          return result.data;
-        }
-        return result.error;
-      };
-
-      while (tweets.length < count) {
-        const pageCount = Math.min(pageSize, count - tweets.length);
-        const page = await fetchPage(pageCount, cursor);
-        if (typeof page === 'string') {
-          return { success: false, error: page };
-        }
-
-        let added = 0;
-        for (const tweet of page.tweets) {
-          if (seen.has(tweet.id)) {
-            continue;
+          if (gqlResult.success) {
+            return { success: true, ...gqlResult.data };
           }
-          seen.add(tweet.id);
-          tweets.push(tweet);
-          added += 1;
-          if (tweets.length >= count) {
-            break;
-          }
-        }
+          return { success: false, error: gqlResult.error };
+        },
+      });
 
-        if (!page.cursor || page.cursor === cursor || page.tweets.length === 0 || added === 0) {
-          break;
-        }
-        cursor = page.cursor;
+      if (result.success) {
+        return { success: true, tweets: result.items };
       }
-
-      return { success: true, tweets };
+      return { success: false, error: result.error, tweets: result.items };
     }
   }
 

@@ -1,3 +1,4 @@
+import { paginateCursor } from './paginate-cursor.js';
 import type { AbstractConstructor, Mixin, TwitterClientBase } from './twitter-client-base.js';
 import { buildSearchFeatures } from './twitter-client-features.js';
 import type { SearchResult, TweetData } from './twitter-client-types.js';
@@ -50,109 +51,74 @@ export function withSearch<TBase extends AbstractConstructor<TwitterClientBase>>
       options: SearchPaginationOptions = {},
     ): Promise<SearchResult> {
       const features = buildSearchFeatures();
-      const pageSize = 20;
-      const seen = new Set<string>();
-      const tweets: TweetData[] = [];
-      let cursor: string | undefined = options.cursor;
-      let nextCursor: string | undefined;
-      let pagesFetched = 0;
       const { includeRaw = false, maxPages } = options;
 
-      type SearchData = { tweets: TweetData[]; cursor?: string };
+      const result = await paginateCursor<TweetData>({
+        cursor: options.cursor,
+        limit,
+        maxPages,
+        getKey: (tweet) => tweet.id,
+        fetchPage: async (count, pageCursor) => {
+          const queryIds = await this.getSearchTimelineQueryIds();
 
-      const fetchPage = async (pageCount: number, pageCursor?: string): Promise<SearchData | string> => {
-        const queryIds = await this.getSearchTimelineQueryIds();
+          const parseSearchResults = (json: Record<string, unknown>) => {
+            const data = json.data as Record<string, unknown> | undefined;
+            const searchByRawQuery = data?.search_by_raw_query as Record<string, unknown> | undefined;
+            const searchTimeline = searchByRawQuery?.search_timeline as Record<string, unknown> | undefined;
+            const timeline = searchTimeline?.timeline as Record<string, unknown> | undefined;
+            const instructions = timeline?.instructions as Array<Record<string, unknown>> | undefined;
+            const pageTweets = parseTweetsFromInstructions(
+              instructions as Parameters<typeof parseTweetsFromInstructions>[0],
+              { quoteDepth: this.quoteDepth, includeRaw },
+            );
+            const nextCursor = extractCursorFromInstructions(
+              instructions as Parameters<typeof extractCursorFromInstructions>[0],
+            );
+            return { items: pageTweets, cursor: nextCursor };
+          };
 
-        const parseSearchResults = (json: Record<string, unknown>): SearchData | undefined => {
-          const data = json.data as Record<string, unknown> | undefined;
-          const searchByRawQuery = data?.search_by_raw_query as Record<string, unknown> | undefined;
-          const searchTimeline = searchByRawQuery?.search_timeline as Record<string, unknown> | undefined;
-          const timeline = searchTimeline?.timeline as Record<string, unknown> | undefined;
-          const instructions = timeline?.instructions as Array<Record<string, unknown>> | undefined;
-          const pageTweets = parseTweetsFromInstructions(
-            instructions as Parameters<typeof parseTweetsFromInstructions>[0],
-            { quoteDepth: this.quoteDepth, includeRaw },
-          );
-          const nextCursor = extractCursorFromInstructions(
-            instructions as Parameters<typeof extractCursorFromInstructions>[0],
-          );
-          return { tweets: pageTweets, cursor: nextCursor };
-        };
+          const checkErrors = (json: Record<string, unknown>): string | undefined => {
+            const errors = json.errors as Array<{ message?: string; extensions?: { code?: string } }> | undefined;
+            if (!errors || errors.length === 0) {
+              return undefined;
+            }
+            const shouldRefresh = errors.some((e) => e?.extensions?.code === 'GRAPHQL_VALIDATION_FAILED');
+            if (shouldRefresh) {
+              return '__query_id_mismatch__';
+            }
+            return errors.map((e) => e.message ?? 'Unknown error').join(', ');
+          };
 
-        // Custom error checker: detect query ID mismatch (should trigger refresh)
-        const checkErrors = (json: Record<string, unknown>): string | undefined => {
-          const errors = json.errors as Array<{ message?: string; extensions?: { code?: string } }> | undefined;
-          if (!errors || errors.length === 0) {
-            return undefined;
-          }
-          const shouldRefresh = errors.some((e) => e?.extensions?.code === 'GRAPHQL_VALIDATION_FAILED');
-          if (shouldRefresh) {
-            return '__query_id_mismatch__';
-          }
-          return errors.map((e) => e.message ?? 'Unknown error').join(', ');
-        };
-
-        const result = await this.graphqlFetchWithRefresh<SearchData>(
-          {
-            operationName: 'SearchTimeline',
-            queryIds,
-            variables: {
-              rawQuery: query,
-              count: pageCount,
-              querySource: 'typed_query',
-              product: 'Latest',
-              ...(pageCursor ? { cursor: pageCursor } : {}),
+          const gqlResult = await this.graphqlFetchWithRefresh(
+            {
+              operationName: 'SearchTimeline',
+              queryIds,
+              variables: {
+                rawQuery: query,
+                count,
+                querySource: 'typed_query',
+                product: 'Latest',
+                ...(pageCursor ? { cursor: pageCursor } : {}),
+              },
+              features,
+              method: 'POST',
+              variablesInUrl: true,
             },
-            features,
-            method: 'POST',
-            variablesInUrl: true,
-          },
-          parseSearchResults,
-          checkErrors,
-        );
+            parseSearchResults,
+            checkErrors,
+          );
 
-        if (result.success) {
-          return result.data;
-        }
-        return result.error;
-      };
-
-      const unlimited = limit === Number.POSITIVE_INFINITY;
-      while (unlimited || tweets.length < limit) {
-        const pageCount = unlimited ? pageSize : Math.min(pageSize, limit - tweets.length);
-        const page = await fetchPage(pageCount, cursor);
-        if (typeof page === 'string') {
-          return { success: false, error: page };
-        }
-        pagesFetched += 1;
-
-        let added = 0;
-        for (const tweet of page.tweets) {
-          if (seen.has(tweet.id)) {
-            continue;
+          if (gqlResult.success) {
+            return { success: true, ...gqlResult.data };
           }
-          seen.add(tweet.id);
-          tweets.push(tweet);
-          added += 1;
-          if (!unlimited && tweets.length >= limit) {
-            break;
-          }
-        }
+          return { success: false, error: gqlResult.error };
+        },
+      });
 
-        const pageCursor = page.cursor;
-        if (!pageCursor || pageCursor === cursor || page.tweets.length === 0 || added === 0) {
-          nextCursor = undefined;
-          break;
-        }
-        if (maxPages && pagesFetched >= maxPages) {
-          nextCursor = pageCursor;
-          break;
-        }
-        cursor = pageCursor;
-        nextCursor = pageCursor;
+      if (result.success) {
+        return { success: true, tweets: result.items, nextCursor: result.nextCursor };
       }
-
-      return { success: true, tweets, nextCursor };
+      return { success: false, error: result.error, tweets: result.items };
     }
   }
 

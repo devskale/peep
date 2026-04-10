@@ -1,3 +1,4 @@
+import { paginateCursor } from './paginate-cursor.js';
 import type { AbstractConstructor, Mixin, TwitterClientBase } from './twitter-client-base.js';
 import { buildUserTweetsFeatures } from './twitter-client-features.js';
 import type { SearchResult, TweetData } from './twitter-client-types.js';
@@ -35,7 +36,6 @@ export function withUserTweets<TBase extends AbstractConstructor<TwitterClientBa
 
     private async getUserTweetsQueryIds(): Promise<string[]> {
       const primary = await this.getQueryId('UserTweets');
-      // Fallback query ID observed from web client
       return Array.from(new Set([primary, 'Wms1GvIiHXAPBaCr9KblaA']));
     }
 
@@ -60,105 +60,65 @@ export function withUserTweets<TBase extends AbstractConstructor<TwitterClientBa
 
       const { includeRaw = false, maxPages, pageDelayMs = 1000 } = options;
       const features = buildUserTweetsFeatures();
-      const pageSize = 20;
-      const seen = new Set<string>();
-      const tweets: TweetData[] = [];
-      let cursor: string | undefined = options.cursor;
-      let nextCursor: string | undefined;
-      let pagesFetched = 0;
       const hardMaxPages = 10;
-      const computedMaxPages = Math.max(1, Math.ceil(limit / pageSize));
-      const effectiveMaxPages = Math.min(hardMaxPages, maxPages ?? computedMaxPages);
+      const effectiveMaxPages = Math.min(hardMaxPages, maxPages ?? Math.ceil(limit / 20));
 
-      type UserTweetsData = { tweets: TweetData[]; cursor?: string };
+      const result = await paginateCursor<TweetData>({
+        cursor: options.cursor,
+        limit,
+        maxPages: effectiveMaxPages,
+        pageDelayMs,
+        sleep: (ms) => this.sleep(ms),
+        getKey: (tweet) => tweet.id,
+        fetchPage: async (count, pageCursor) => {
+          const queryIds = await this.getUserTweetsQueryIds();
 
-      const fetchPage = async (pageCount: number, pageCursor?: string): Promise<UserTweetsData | string> => {
-        const queryIds = await this.getUserTweetsQueryIds();
+          const parseUserTweets = (json: Record<string, unknown>) => {
+            const data = json.data as Record<string, unknown> | undefined;
+            const user = data?.user as Record<string, unknown> | undefined;
+            const result = user?.result as Record<string, unknown> | undefined;
+            const timeline = result?.timeline as Record<string, unknown> | undefined;
+            const tl = timeline?.timeline as Record<string, unknown> | undefined;
+            const instructions = tl?.instructions as Array<Record<string, unknown>> | undefined;
+            const pageTweets = parseTweetsFromInstructions(
+              instructions as Parameters<typeof parseTweetsFromInstructions>[0],
+              { quoteDepth: this.quoteDepth, includeRaw },
+            );
+            const cursor = extractCursorFromInstructions(
+              instructions as Parameters<typeof extractCursorFromInstructions>[0],
+            );
+            return { items: pageTweets, cursor };
+          };
 
-        const parseUserTweets = (json: Record<string, unknown>): UserTweetsData | undefined => {
-          const data = json.data as Record<string, unknown> | undefined;
-          const user = data?.user as Record<string, unknown> | undefined;
-          const result = user?.result as Record<string, unknown> | undefined;
-          const timeline = result?.timeline as Record<string, unknown> | undefined;
-          const tl = timeline?.timeline as Record<string, unknown> | undefined;
-          const instructions = tl?.instructions as Array<Record<string, unknown>> | undefined;
-          const pageTweets = parseTweetsFromInstructions(
-            instructions as Parameters<typeof parseTweetsFromInstructions>[0],
-            { quoteDepth: this.quoteDepth, includeRaw },
-          );
-          const pageCursor = extractCursorFromInstructions(
-            instructions as Parameters<typeof extractCursorFromInstructions>[0],
-          );
-          return { tweets: pageTweets, cursor: pageCursor };
-        };
-
-        const result = await this.graphqlFetchWithRefresh<UserTweetsData>(
-          {
-            operationName: 'UserTweets',
-            queryIds,
-            variables: {
-              userId,
-              count: pageCount,
-              includePromotedContent: false,
-              withQuickPromoteEligibilityTweetFields: true,
-              withVoice: true,
-              ...(pageCursor ? { cursor: pageCursor } : {}),
+          const gqlResult = await this.graphqlFetchWithRefresh(
+            {
+              operationName: 'UserTweets',
+              queryIds,
+              variables: {
+                userId,
+                count,
+                includePromotedContent: false,
+                withQuickPromoteEligibilityTweetFields: true,
+                withVoice: true,
+                ...(pageCursor ? { cursor: pageCursor } : {}),
+              },
+              features,
+              fieldToggles: { withArticlePlainText: false },
             },
-            features,
-            fieldToggles: { withArticlePlainText: false },
-          },
-          parseUserTweets,
-        );
+            parseUserTweets,
+          );
 
-        if (result.success) {
-          return result.data;
-        }
-        return result.error;
-      };
-
-      while (tweets.length < limit) {
-        // Add delay between pages (but not before the first page)
-        if (pagesFetched > 0 && pageDelayMs > 0) {
-          await this.sleep(pageDelayMs);
-        }
-
-        const remaining = limit - tweets.length;
-        const pageCount = Math.min(pageSize, remaining);
-        const page = await fetchPage(pageCount, cursor);
-        if (typeof page === 'string') {
-          return { success: false, error: page };
-        }
-        pagesFetched += 1;
-
-        let added = 0;
-        for (const tweet of page.tweets) {
-          if (seen.has(tweet.id)) {
-            continue;
+          if (gqlResult.success) {
+            return { success: true, ...gqlResult.data };
           }
-          seen.add(tweet.id);
-          tweets.push(tweet);
-          added += 1;
-          if (tweets.length >= limit) {
-            break;
-          }
-        }
+          return { success: false, error: gqlResult.error };
+        },
+      });
 
-        const pageCursor = page.cursor;
-        if (!pageCursor || pageCursor === cursor || page.tweets.length === 0 || added === 0) {
-          nextCursor = undefined;
-          break;
-        }
-
-        if (pagesFetched >= effectiveMaxPages) {
-          nextCursor = pageCursor;
-          break;
-        }
-
-        cursor = pageCursor;
-        nextCursor = pageCursor;
+      if (result.success) {
+        return { success: true, tweets: result.items, nextCursor: result.nextCursor };
       }
-
-      return { success: true, tweets, nextCursor };
+      return { success: false, error: result.error, tweets: result.items, nextCursor: result.nextCursor };
     }
   }
 

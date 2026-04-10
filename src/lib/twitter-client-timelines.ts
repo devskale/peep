@@ -1,3 +1,4 @@
+import { paginateCursor } from './paginate-cursor.js';
 import type { AbstractConstructor, Mixin, TwitterClientBase } from './twitter-client-base.js';
 import { buildBookmarksFeatures, buildLikesFeatures } from './twitter-client-features.js';
 import type { SearchResult, TweetData } from './twitter-client-types.js';
@@ -71,128 +72,6 @@ export function withTimelines<TBase extends AbstractConstructor<TwitterClientBas
       return this.getLikesPaged(Number.POSITIVE_INFINITY, options);
     }
 
-    private async getLikesPaged(limit: number, options: TimelinePaginationOptions = {}): Promise<SearchResult> {
-      const userResult = await this.getCurrentUser();
-      if (!userResult.success || !userResult.user) {
-        return { success: false, error: userResult.error ?? 'Could not determine current user' };
-      }
-      const userId = userResult.user.id;
-      const features = buildLikesFeatures();
-      const pageSize = 20;
-      const seen = new Set<string>();
-      const tweets: TweetData[] = [];
-      let cursor: string | undefined = options.cursor;
-      let nextCursor: string | undefined;
-      let pagesFetched = 0;
-      const { includeRaw = false, maxPages } = options;
-
-      type TimelineData = { tweets: TweetData[]; cursor?: string };
-
-      const fetchPage = async (pageCount: number, pageCursor?: string): Promise<TimelineData | string> => {
-        const queryIds = await this.getLikesQueryIds();
-
-        const parseLikes = (json: Record<string, unknown>): TimelineData | undefined => {
-          const data = json.data as Record<string, unknown> | undefined;
-          const user = data?.user as Record<string, unknown> | undefined;
-          const result = user?.result as Record<string, unknown> | undefined;
-          const timeline = result?.timeline as Record<string, unknown> | undefined;
-          const tl = timeline?.timeline as Record<string, unknown> | undefined;
-          const instructions = tl?.instructions as Array<Record<string, unknown>> | undefined;
-          const pageTweets = parseTweetsFromInstructions(
-            instructions as Parameters<typeof parseTweetsFromInstructions>[0],
-            { quoteDepth: this.quoteDepth, includeRaw },
-          );
-          const extractedCursor = extractCursorFromInstructions(
-            instructions as Parameters<typeof extractCursorFromInstructions>[0],
-          );
-          return { tweets: pageTweets, cursor: extractedCursor };
-        };
-
-        // Custom error checker: allow partial errors when instructions are present
-        const checkErrors = (json: Record<string, unknown>): string | undefined => {
-          const errors = json.errors as Array<{ message?: string }> | undefined;
-          if (!errors || errors.length === 0) {
-            return undefined;
-          }
-          const message = errors.map((e) => e.message ?? 'Unknown error').join(', ');
-          const data = json.data as Record<string, unknown> | undefined;
-          const user = data?.user as Record<string, unknown> | undefined;
-          const result = user?.result as Record<string, unknown> | undefined;
-          const timeline = result?.timeline as Record<string, unknown> | undefined;
-          const tl = timeline?.timeline as Record<string, unknown> | undefined;
-          const instructions = tl?.instructions;
-          if (instructions) {
-            return undefined; // data present, ignore non-fatal errors
-          }
-          if (message.includes('Query: Unspecified')) {
-            return '__query_id_mismatch__';
-          }
-          return message;
-        };
-
-        const result = await this.graphqlFetchWithRefresh<TimelineData>(
-          {
-            operationName: 'Likes',
-            queryIds,
-            variables: {
-              userId,
-              count: pageCount,
-              includePromotedContent: false,
-              withClientEventToken: false,
-              withBirdwatchNotes: false,
-              withVoice: true,
-              ...(pageCursor ? { cursor: pageCursor } : {}),
-            },
-            features,
-          },
-          parseLikes,
-          checkErrors,
-        );
-
-        if (result.success) {
-          return result.data;
-        }
-        return result.error;
-      };
-
-      const unlimited = limit === Number.POSITIVE_INFINITY;
-      while (unlimited || tweets.length < limit) {
-        const pageCount = unlimited ? pageSize : Math.min(pageSize, limit - tweets.length);
-        const page = await fetchPage(pageCount, cursor);
-        if (typeof page === 'string') {
-          return { success: false, error: page };
-        }
-        pagesFetched += 1;
-
-        let added = 0;
-        for (const tweet of page.tweets) {
-          if (seen.has(tweet.id)) {
-            continue;
-          }
-          seen.add(tweet.id);
-          tweets.push(tweet);
-          added += 1;
-          if (!unlimited && tweets.length >= limit) {
-            break;
-          }
-        }
-
-        const pageCursor = page.cursor;
-        if (!pageCursor || pageCursor === cursor || page.tweets.length === 0 || added === 0) {
-          nextCursor = undefined;
-          break;
-        }
-        if (maxPages && pagesFetched >= maxPages) {
-          nextCursor = pageCursor;
-          break;
-        }
-        cursor = pageCursor;
-        nextCursor = pageCursor;
-      }
-
-      return { success: true, tweets, nextCursor };
-    }
-
     /**
      * Get the authenticated user's bookmark folder timeline
      */
@@ -208,114 +87,164 @@ export function withTimelines<TBase extends AbstractConstructor<TwitterClientBas
       return this.getBookmarkFolderTimelinePaged(folderId, Number.POSITIVE_INFINITY, options);
     }
 
-    private async getBookmarksPaged(limit: number, options: TimelinePaginationOptions = {}): Promise<SearchResult> {
-      const features = buildBookmarksFeatures();
-      const pageSize = 20;
-      const seen = new Set<string>();
-      const tweets: TweetData[] = [];
-      let cursor: string | undefined = options.cursor;
-      let nextCursor: string | undefined;
-      let pagesFetched = 0;
+    private async getLikesPaged(limit: number, options: TimelinePaginationOptions = {}): Promise<SearchResult> {
+      const userResult = await this.getCurrentUser();
+      if (!userResult.success || !userResult.user) {
+        return { success: false, error: userResult.error ?? 'Could not determine current user' };
+      }
+      const userId = userResult.user.id;
+      const features = buildLikesFeatures();
       const { includeRaw = false, maxPages } = options;
 
-      type TimelineData = { tweets: TweetData[]; cursor?: string };
+      const result = await paginateCursor<TweetData>({
+        cursor: options.cursor,
+        limit,
+        maxPages,
+        getKey: (tweet) => tweet.id,
+        fetchPage: async (count, pageCursor) => {
+          const queryIds = await this.getLikesQueryIds();
 
-      const fetchPage = async (pageCount: number, pageCursor?: string): Promise<TimelineData | string> => {
-        const queryIds = await this.getBookmarksQueryIds();
+          const parseLikes = (json: Record<string, unknown>) => {
+            const data = json.data as Record<string, unknown> | undefined;
+            const user = data?.user as Record<string, unknown> | undefined;
+            const result = user?.result as Record<string, unknown> | undefined;
+            const timeline = result?.timeline as Record<string, unknown> | undefined;
+            const tl = timeline?.timeline as Record<string, unknown> | undefined;
+            const instructions = tl?.instructions as Array<Record<string, unknown>> | undefined;
+            const pageTweets = parseTweetsFromInstructions(
+              instructions as Parameters<typeof parseTweetsFromInstructions>[0],
+              { quoteDepth: this.quoteDepth, includeRaw },
+            );
+            const cursor = extractCursorFromInstructions(
+              instructions as Parameters<typeof extractCursorFromInstructions>[0],
+            );
+            return { items: pageTweets, cursor };
+          };
 
-        const variables = {
-          count: pageCount,
-          includePromotedContent: false,
-          withDownvotePerspective: false,
-          withReactionsMetadata: false,
-          withReactionsPerspective: false,
-          ...(pageCursor ? { cursor: pageCursor } : {}),
-        };
+          const checkErrors = (json: Record<string, unknown>): string | undefined => {
+            const errors = json.errors as Array<{ message?: string }> | undefined;
+            if (!errors || errors.length === 0) {
+              return undefined;
+            }
+            const message = errors.map((e) => e.message ?? 'Unknown error').join(', ');
+            const data = json.data as Record<string, unknown> | undefined;
+            const user = data?.user as Record<string, unknown> | undefined;
+            const result = user?.result as Record<string, unknown> | undefined;
+            const timeline = result?.timeline as Record<string, unknown> | undefined;
+            const tl = timeline?.timeline as Record<string, unknown> | undefined;
+            const instructions = tl?.instructions;
+            if (instructions) {
+              return undefined;
+            }
+            if (message.includes('Query: Unspecified')) {
+              return '__query_id_mismatch__';
+            }
+            return message;
+          };
 
-        const parseBookmarks = (json: Record<string, unknown>): TimelineData | undefined => {
-          const data = json.data as Record<string, unknown> | undefined;
-          const bookmarkTimelineV2 = data?.bookmark_timeline_v2 as Record<string, unknown> | undefined;
-          const timeline = bookmarkTimelineV2?.timeline as Record<string, unknown> | undefined;
-          const instructions = timeline?.instructions as Array<Record<string, unknown>> | undefined;
-          const pageTweets = parseTweetsFromInstructions(
-            instructions as Parameters<typeof parseTweetsFromInstructions>[0],
-            { quoteDepth: this.quoteDepth, includeRaw },
+          const gqlResult = await this.graphqlFetchWithRefresh(
+            {
+              operationName: 'Likes',
+              queryIds,
+              variables: {
+                userId,
+                count,
+                includePromotedContent: false,
+                withClientEventToken: false,
+                withBirdwatchNotes: false,
+                withVoice: true,
+                ...(pageCursor ? { cursor: pageCursor } : {}),
+              },
+              features,
+            },
+            parseLikes,
+            checkErrors,
           );
-          const nextCursor = extractCursorFromInstructions(
-            instructions as Parameters<typeof extractCursorFromInstructions>[0],
-          );
-          return { tweets: pageTweets, cursor: nextCursor };
-        };
 
-        // Custom error checker: allow non-fatal errors when instructions are present
-        const checkErrors = (json: Record<string, unknown>): string | undefined => {
-          const errors = json.errors as Array<{ message?: string }> | undefined;
-          if (!errors || errors.length === 0) {
-            return undefined;
+          if (gqlResult.success) {
+            return { success: true, ...gqlResult.data };
           }
-          const data = json.data as Record<string, unknown> | undefined;
-          const bookmarkTimelineV2 = data?.bookmark_timeline_v2 as Record<string, unknown> | undefined;
-          const timeline = bookmarkTimelineV2?.timeline as Record<string, unknown> | undefined;
-          const instructions = timeline?.instructions;
-          if (instructions) {
-            return undefined; // data present, ignore non-fatal errors
-          }
-          return errors.map((e) => e.message ?? 'Unknown error').join(', ');
-        };
+          return { success: false, error: gqlResult.error };
+        },
+      });
 
-        const result = await this.graphqlFetchWithRefresh<TimelineData>(
-          {
-            operationName: 'Bookmarks',
-            queryIds,
-            variables,
-            features,
-          },
-          parseBookmarks,
-          checkErrors,
-        );
-
-        if (result.success) {
-          return result.data;
-        }
-        return result.error;
-      };
-
-      const unlimited = limit === Number.POSITIVE_INFINITY;
-      while (unlimited || tweets.length < limit) {
-        const pageCount = unlimited ? pageSize : Math.min(pageSize, limit - tweets.length);
-        const page = await fetchPage(pageCount, cursor);
-        if (typeof page === 'string') {
-          return { success: false, error: page };
-        }
-        pagesFetched += 1;
-
-        let added = 0;
-        for (const tweet of page.tweets) {
-          if (seen.has(tweet.id)) {
-            continue;
-          }
-          seen.add(tweet.id);
-          tweets.push(tweet);
-          added += 1;
-          if (!unlimited && tweets.length >= limit) {
-            break;
-          }
-        }
-
-        const pageCursor = page.cursor;
-        if (!pageCursor || pageCursor === cursor || page.tweets.length === 0 || added === 0) {
-          nextCursor = undefined;
-          break;
-        }
-        if (maxPages && pagesFetched >= maxPages) {
-          nextCursor = pageCursor;
-          break;
-        }
-        cursor = pageCursor;
-        nextCursor = pageCursor;
+      if (result.success) {
+        return { success: true, tweets: result.items, nextCursor: result.nextCursor };
       }
+      return { success: false, error: result.error, tweets: result.items, nextCursor: result.nextCursor };
+    }
 
-      return { success: true, tweets, nextCursor };
+    private async getBookmarksPaged(limit: number, options: TimelinePaginationOptions = {}): Promise<SearchResult> {
+      const features = buildBookmarksFeatures();
+      const { includeRaw = false, maxPages } = options;
+
+      const result = await paginateCursor<TweetData>({
+        cursor: options.cursor,
+        limit,
+        maxPages,
+        getKey: (tweet) => tweet.id,
+        fetchPage: async (count, pageCursor) => {
+          const queryIds = await this.getBookmarksQueryIds();
+
+          const parseBookmarks = (json: Record<string, unknown>) => {
+            const data = json.data as Record<string, unknown> | undefined;
+            const bookmarkTimelineV2 = data?.bookmark_timeline_v2 as Record<string, unknown> | undefined;
+            const timeline = bookmarkTimelineV2?.timeline as Record<string, unknown> | undefined;
+            const instructions = timeline?.instructions as Array<Record<string, unknown>> | undefined;
+            const pageTweets = parseTweetsFromInstructions(
+              instructions as Parameters<typeof parseTweetsFromInstructions>[0],
+              { quoteDepth: this.quoteDepth, includeRaw },
+            );
+            const cursor = extractCursorFromInstructions(
+              instructions as Parameters<typeof extractCursorFromInstructions>[0],
+            );
+            return { items: pageTweets, cursor };
+          };
+
+          const checkErrors = (json: Record<string, unknown>): string | undefined => {
+            const errors = json.errors as Array<{ message?: string }> | undefined;
+            if (!errors || errors.length === 0) {
+              return undefined;
+            }
+            const data = json.data as Record<string, unknown> | undefined;
+            const bookmarkTimelineV2 = data?.bookmark_timeline_v2 as Record<string, unknown> | undefined;
+            const timeline = bookmarkTimelineV2?.timeline as Record<string, unknown> | undefined;
+            const instructions = timeline?.instructions;
+            if (instructions) {
+              return undefined;
+            }
+            return errors.map((e) => e.message ?? 'Unknown error').join(', ');
+          };
+
+          const gqlResult = await this.graphqlFetchWithRefresh(
+            {
+              operationName: 'Bookmarks',
+              queryIds,
+              variables: {
+                count,
+                includePromotedContent: false,
+                withDownvotePerspective: false,
+                withReactionsMetadata: false,
+                withReactionsPerspective: false,
+                ...(pageCursor ? { cursor: pageCursor } : {}),
+              },
+              features,
+            },
+            parseBookmarks,
+            checkErrors,
+          );
+
+          if (gqlResult.success) {
+            return { success: true, ...gqlResult.data };
+          }
+          return { success: false, error: gqlResult.error };
+        },
+      });
+
+      if (result.success) {
+        return { success: true, tweets: result.items, nextCursor: result.nextCursor };
+      }
+      return { success: false, error: result.error, tweets: result.items, nextCursor: result.nextCursor };
     }
 
     private async getBookmarkFolderTimelinePaged(
@@ -324,80 +253,58 @@ export function withTimelines<TBase extends AbstractConstructor<TwitterClientBas
       options: TimelinePaginationOptions = {},
     ): Promise<SearchResult> {
       const features = buildBookmarksFeatures();
-      const pageSize = 20;
-      const seen = new Set<string>();
-      const tweets: TweetData[] = [];
-      let cursor: string | undefined = options.cursor;
-      let nextCursor: string | undefined;
-      let pagesFetched = 0;
       const { includeRaw = false, maxPages } = options;
 
-      type TimelineData = { tweets: TweetData[]; cursor?: string };
+      const result = await paginateCursor<TweetData>({
+        cursor: options.cursor,
+        limit,
+        maxPages,
+        getKey: (tweet) => tweet.id,
+        fetchPage: async (count, pageCursor) => {
+          const queryIds = await this.getBookmarkFolderQueryIds();
 
-      const fetchPage = async (pageCount: number, pageCursor?: string): Promise<TimelineData | string> => {
-        const queryIds = await this.getBookmarkFolderQueryIds();
+          const parseFolderTimeline = (json: Record<string, unknown>) => {
+            const data = json.data as Record<string, unknown> | undefined;
+            const bookmarkCollectionTimeline = data?.bookmark_collection_timeline as
+              | Record<string, unknown>
+              | undefined;
+            const timeline = bookmarkCollectionTimeline?.timeline as Record<string, unknown> | undefined;
+            const instructions = timeline?.instructions as Array<Record<string, unknown>> | undefined;
+            const pageTweets = parseTweetsFromInstructions(
+              instructions as Parameters<typeof parseTweetsFromInstructions>[0],
+              { quoteDepth: this.quoteDepth, includeRaw },
+            );
+            const cursor = extractCursorFromInstructions(
+              instructions as Parameters<typeof extractCursorFromInstructions>[0],
+            );
+            return { items: pageTweets, cursor };
+          };
 
-        const parseFolderTimeline = (json: Record<string, unknown>): TimelineData | undefined => {
-          const data = json.data as Record<string, unknown> | undefined;
-          const bookmarkCollectionTimeline = data?.bookmark_collection_timeline as Record<string, unknown> | undefined;
-          const timeline = bookmarkCollectionTimeline?.timeline as Record<string, unknown> | undefined;
-          const instructions = timeline?.instructions as Array<Record<string, unknown>> | undefined;
-          const pageTweets = parseTweetsFromInstructions(
-            instructions as Parameters<typeof parseTweetsFromInstructions>[0],
-            { quoteDepth: this.quoteDepth, includeRaw },
-          );
-          const nextCursor = extractCursorFromInstructions(
-            instructions as Parameters<typeof extractCursorFromInstructions>[0],
-          );
-          return { tweets: pageTweets, cursor: nextCursor };
-        };
+          const checkErrors = (json: Record<string, unknown>): string | undefined => {
+            const errors = json.errors as Array<{ message?: string }> | undefined;
+            if (!errors || errors.length === 0) {
+              return undefined;
+            }
+            const data = json.data as Record<string, unknown> | undefined;
+            const bookmarkCollectionTimeline = data?.bookmark_collection_timeline as
+              | Record<string, unknown>
+              | undefined;
+            const timeline = bookmarkCollectionTimeline?.timeline as Record<string, unknown> | undefined;
+            const instructions = timeline?.instructions;
+            if (instructions) {
+              return undefined;
+            }
+            return errors.map((e) => e.message ?? 'Unknown error').join(', ');
+          };
 
-        // Custom error checker: allow non-fatal errors when instructions are present
-        const checkErrors = (json: Record<string, unknown>): string | undefined => {
-          const errors = json.errors as Array<{ message?: string }> | undefined;
-          if (!errors || errors.length === 0) {
-            return undefined;
-          }
-          const data = json.data as Record<string, unknown> | undefined;
-          const bookmarkCollectionTimeline = data?.bookmark_collection_timeline as Record<string, unknown> | undefined;
-          const timeline = bookmarkCollectionTimeline?.timeline as Record<string, unknown> | undefined;
-          const instructions = timeline?.instructions;
-          if (instructions) {
-            return undefined;
-          }
-          return errors.map((e) => e.message ?? 'Unknown error').join(', ');
-        };
-
-        // Try with count, then without if the variable is rejected
-        const result = await this.graphqlFetchWithRefresh<TimelineData>(
-          {
-            operationName: 'BookmarkFolderTimeline',
-            queryIds,
-            variables: {
-              bookmark_collection_id: folderId,
-              includePromotedContent: true,
-              count: pageCount,
-              ...(pageCursor ? { cursor: pageCursor } : {}),
-            },
-            features,
-          },
-          parseFolderTimeline,
-          checkErrors,
-        );
-
-        if (result.success) {
-          return result.data;
-        }
-
-        // If the error is about the $count variable, retry without it
-        if (result.error?.includes('Variable "$count"')) {
-          const retryResult = await this.graphqlFetchWithRefresh<TimelineData>(
+          const gqlResult = await this.graphqlFetchWithRefresh(
             {
               operationName: 'BookmarkFolderTimeline',
               queryIds,
               variables: {
                 bookmark_collection_id: folderId,
                 includePromotedContent: true,
+                count,
                 ...(pageCursor ? { cursor: pageCursor } : {}),
               },
               features,
@@ -405,51 +312,41 @@ export function withTimelines<TBase extends AbstractConstructor<TwitterClientBas
             parseFolderTimeline,
             checkErrors,
           );
-          if (retryResult.success) {
-            return retryResult.data;
+
+          if (gqlResult.success) {
+            return { success: true, ...gqlResult.data };
           }
-          return retryResult.error;
-        }
 
-        return result.error;
-      };
-
-      const unlimited = limit === Number.POSITIVE_INFINITY;
-      while (unlimited || tweets.length < limit) {
-        const pageCount = unlimited ? pageSize : Math.min(pageSize, limit - tweets.length);
-        const page = await fetchPage(pageCount, cursor);
-        if (typeof page === 'string') {
-          return { success: false, error: page };
-        }
-        pagesFetched += 1;
-
-        let added = 0;
-        for (const tweet of page.tweets) {
-          if (seen.has(tweet.id)) {
-            continue;
+          // If the error is about the $count variable, retry without it
+          if (gqlResult.error?.includes('Variable "$count"')) {
+            const retryResult = await this.graphqlFetchWithRefresh(
+              {
+                operationName: 'BookmarkFolderTimeline',
+                queryIds,
+                variables: {
+                  bookmark_collection_id: folderId,
+                  includePromotedContent: true,
+                  ...(pageCursor ? { cursor: pageCursor } : {}),
+                },
+                features,
+              },
+              parseFolderTimeline,
+              checkErrors,
+            );
+            if (retryResult.success) {
+              return { success: true, ...retryResult.data };
+            }
+            return { success: false, error: retryResult.error };
           }
-          seen.add(tweet.id);
-          tweets.push(tweet);
-          added += 1;
-          if (!unlimited && tweets.length >= limit) {
-            break;
-          }
-        }
 
-        const pageCursor = page.cursor;
-        if (!pageCursor || pageCursor === cursor || page.tweets.length === 0 || added === 0) {
-          nextCursor = undefined;
-          break;
-        }
-        if (maxPages && pagesFetched >= maxPages) {
-          nextCursor = pageCursor;
-          break;
-        }
-        cursor = pageCursor;
-        nextCursor = pageCursor;
+          return { success: false, error: gqlResult.error };
+        },
+      });
+
+      if (result.success) {
+        return { success: true, tweets: result.items, nextCursor: result.nextCursor };
       }
-
-      return { success: true, tweets, nextCursor };
+      return { success: false, error: result.error, tweets: result.items, nextCursor: result.nextCursor };
     }
   }
 
