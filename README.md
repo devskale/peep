@@ -346,8 +346,7 @@ Runtime cache:
 
 Auto-recovery:
 - On GraphQL `404` (query ID invalid), `peep` forces a refresh once and retries.
-- For `TweetDetail`/`SearchTimeline`, `peep` also rotates through a small set of known fallback IDs to reduce
-  breakage while refreshing.
+- A centralized `getQueryIdsWithFallbacks()` helper merges the runtime query ID with any extra fallback IDs from a constants map (`EXTRA_QUERY_ID_FALLBACKS`), covering operations like `TweetDetail`, `SearchTimeline`, and `Bookmarks` that have known alternative IDs.
 
 Refresh on demand:
 
@@ -390,6 +389,16 @@ pnpm run dev -- --plain check
 pnpm test
 pnpm run lint
 ```
+
+### Architecture
+
+See [Architecture](docs/ARCHITECTURE.md) for internal details. Key design patterns:
+
+- **Mixin-based client**: `TwitterClient` is composed from ~12 capability mixins (search, bookmarks, posting, etc.) layered on an abstract base class
+- **Unified GraphQL fetch pipeline**: all requests go through `graphqlFetchWithRefresh()` / `graphqlMutationWithRetry()` in the base class — automatic 404-retry with query-ID refresh
+- **Centralized pagination**: `paginateCursor()` handles the page-fetch loop with cursor tracking, deduplication, and optional item/page limits
+- **Layered feature flags**: three base objects (`CORE` → `STANDARD` → `TIMELINE`) eliminate duplication across 14 `build*Features()` builders
+- **Split utility modules**: content-state rendering, tweet mapping, and general utilities live in focused files with re-exports for backward compatibility
 
 ## Notes
 

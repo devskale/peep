@@ -128,27 +128,25 @@ https://x.com/i/api/graphql/{queryId}/TweetDetail
 
 ### 2. Massive Feature Flags
 
-Every GraphQL request requires ~50+ feature flags that X's frontend sends. Wrong flags = broken response:
+Every GraphQL request requires ~50+ feature flags that X's frontend sends. Wrong flags = broken response.
+
+Different endpoints need different flag sets. peep uses a layered architecture in `twitter-client-features.ts` to avoid duplicating ~40 flags across every builder:
 
 ```typescript
-// Example from twitter-client-features.ts
-{
-  responsive_web_graphql_timeline_navigation_enabled: true,
-  longform_notetweets_consumption_enabled: true,
-  freedom_of_speech_not_reach_fetch_enabled: true,
-  responsive_web_grok_analyze_button_fetch_trends_enabled: false,
-  articles_preview_enabled: true,
-  // ... 50+ more flags
-}
+// CORE_FEATURES (21 flags): universal defaults shared by all builders
+// STANDARD_FEATURES (37 flags): CORE + content/Grok/media cluster
+// TIMELINE_FEATURES (45 flags): STANDARD + timeline-specific flags
+
+// Each builder spreads the nearest base and lists only its overrides:
+buildArticleFeatures()     → STANDARD (no overrides)
+buildSearchFeatures()     → STANDARD + 1 flag
+buildTweetCreateFeatures() → STANDARD - 1 flag
+buildTimelineFeatures()   → TIMELINE (no overrides)
+buildBookmarksFeatures()  → TIMELINE + 1 flag
+// etc.
 ```
 
-Different endpoints need different flag sets. peep has dedicated builders:
-- `buildTweetDetailFeatures()` - for reading tweets
-- `buildSearchFeatures()` - for search
-- `buildTweetCreateFeatures()` - for posting
-- `buildTimelineFeatures()` - for timelines
-- `buildBookmarksFeatures()` - for bookmarks
-- etc.
+All builders are also subject to runtime overrides via `applyFeatureOverrides()`.
 
 ### 3. Browser-Like Request Headers
 
@@ -189,17 +187,22 @@ No API keys required - peep extracts cookies from your logged-in browser session
 
 ### 5. Fallback Chain for Query IDs
 
-When the primary query ID fails, peep tries multiple fallbacks:
+When the primary query ID fails, peep tries multiple fallbacks via a centralized helper:
 
 ```typescript
-// From twitter-client-base.ts
-protected async getTweetDetailQueryIds(): Promise<string[]> {
-  const primary = await this.getQueryId('TweetDetail');
-  return Array.from(new Set([
-    primary,
-    '97JF30KziU00483E_8elBA',  // known fallback
-    'aFvUsJm2c-oDkJV75blV6g'   // another fallback
-  ]));
+// Base class helper merges runtime/baked-in ID with extra fallbacks
+protected async getQueryIdsWithFallbacks(op: OperationName): Promise<string[]> {
+  const primary = await this.getQueryId(op);           // runtime or baked-in
+  const extras = EXTRA_QUERY_ID_FALLBACKS[op] ?? [];    // extra fallback IDs
+  return Array.from(new Set([primary, ...extras]));
+}
+
+// EXTRA_QUERY_ID_FALLBACKS in twitter-client-constants.ts:
+// TweetDetail: 1 extra, SearchTimeline: 2 extra, Bookmarks: 1 extra, ...
+
+// Each mixin delegates:
+protected async getTweetDetailQueryIds() {
+  return this.getQueryIdsWithFallbacks('TweetDetail');
 }
 ```
 
@@ -234,20 +237,18 @@ The parser handles:
 
 ### 7. 404 Auto-Recovery Pattern
 
-```typescript
-// From twitter-client-base.ts
-protected async withRefreshedQueryIdsOn404<T extends { success: boolean; had404?: boolean }>(
-  attempt: () => Promise<T>,
-): Promise<{ result: T; refreshed: boolean }> {
-  const firstAttempt = await attempt();
-  if (firstAttempt.success || !firstAttempt.had404) {
-    return { result: firstAttempt, refreshed: false };
-  }
+All GraphQL requests go through a unified fetch pipeline in the base class:
 
-  await this.refreshQueryIds();  // Scrape new IDs from x.com
-  const secondAttempt = await attempt();
-  return { result: secondAttempt, refreshed: true };
-}
+```typescript
+// graphqlFetchWithRefresh: try each query ID, on 404 → refresh and retry
+protected async graphqlFetchWithRefresh<T>(
+  opts: GqlFetchOptions,   // operationName, queryIds, variables, features, ...
+  parseResponse,           // caller-defined parser: success → T, failure → undefined
+  checkError?,              // optional GQL error checker
+): Promise<GqlResult<T>>
+
+// For write mutations (tweet, like, retweet, bookmark):
+// graphqlMutationWithRetry — same as above + fallback to generic POST endpoint
 ```
 
 ### 8. Deep Response Unwrapping
@@ -337,10 +338,13 @@ src/
     ├── cookies.ts            # Browser cookie extraction
     ├── runtime-query-ids.ts  # Dynamic query ID discovery
     ├── runtime-features.ts   # Feature flag overrides
-    ├── twitter-client-features.ts    # Feature flag builders
-    ├── twitter-client-constants.ts   # API URLs, query IDs
-    ├── twitter-client-types.ts       # TypeScript types
-    └── twitter-client-utils.ts       # Response parsing, Draft.js renderer
+    ├── twitter-client-features.ts       # Feature flag builders (layered bases)
+    ├── twitter-client-content-state.ts# Draft.js renderer, text/media extraction
+    ├── twitter-client-tweet-mapping.ts# Tweet mapping, instruction parsing
+    ├── twitter-client-utils.ts        # General utilities + re-exports
+    ├── twitter-client-constants.ts    # API URLs, query IDs, fallback maps
+    ├── twitter-client-types.ts        # TypeScript types
+    └── paginate-cursor.ts             # Unified pagination helper
 ```
 
 ---
@@ -351,8 +355,9 @@ The sophistication isn't in any single technique - it's the combination of:
 
 1. **Reverse-engineering** X's undocumented GraphQL schema
 2. **Mimicking** browser requests exactly (headers, IDs, cookies)
-3. **Self-healing** when query IDs rotate (runtime discovery)
+3. **Self-healing** when query IDs rotate (runtime discovery + fallback chains)
 4. **Parsing** complex nested responses (Draft.js, wrapped types)
 5. **Extracting** cookies from encrypted browser storage
+6. **Resilient fetch pipeline** — unified 404-retry, query-ID refresh, pagination
 
 All of these must work together, or nothing works. X's API is intentionally hostile to automation, and peep navigates this by faithfully replicating what the official web client does.
