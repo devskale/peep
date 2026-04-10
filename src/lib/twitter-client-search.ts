@@ -77,14 +77,14 @@ export function withSearch<TBase extends AbstractConstructor<TwitterClientBase>>
             return { items: pageTweets, cursor: nextCursor };
           };
 
-          const checkErrors = (json: Record<string, unknown>): string | undefined => {
+          const checkErrors = (json: Record<string, unknown>) => {
             const errors = json.errors as Array<{ message?: string; extensions?: { code?: string } }> | undefined;
             if (!errors || errors.length === 0) {
               return undefined;
             }
             const shouldRefresh = errors.some((e) => e?.extensions?.code === 'GRAPHQL_VALIDATION_FAILED');
             if (shouldRefresh) {
-              return '__query_id_mismatch__';
+              return { message: errors.map((e) => e.message ?? 'Unknown error').join(', '), retry: true };
             }
             return errors.map((e) => e.message ?? 'Unknown error').join(', ');
           };

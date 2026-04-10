@@ -111,7 +111,7 @@ export async function paginateCursor<T>(
       items.push(item);
       added += 1;
       if (!unlimited && items.length >= limit) {
-        break;
+        return { success: true, items, nextCursor: page.cursor };
       }
     }
 

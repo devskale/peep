@@ -45,7 +45,9 @@ export type GqlResult<T> = { success: true; data: T } | { success: false; error:
 export type GqlResponseParser<T> = (json: Record<string, unknown>) => T | undefined;
 
 /** Callback that receives a JSON response and returns an error string if the response is an error (non-404). */
-export type GqlErrorChecker = (json: Record<string, unknown>) => string | undefined;
+export type GqlErrorChecker = (
+  json: Record<string, unknown>,
+) => string | { message: string; retry: boolean } | undefined;
 
 /** Default error checker: looks for a top-level `errors` array. */
 export const defaultGqlErrorChecker: GqlErrorChecker = (json) => {
@@ -270,7 +272,10 @@ export abstract class TwitterClientBase {
         // Check for GraphQL-level errors
         const gqlError = errorChecker(json);
         if (gqlError) {
-          return { success: false, error: gqlError, had404 };
+          const isObj = typeof gqlError === 'object' && gqlError !== null;
+          const message = isObj ? (gqlError as { message: string }).message : (gqlError as string);
+          const retry = isObj ? (gqlError as { retry: boolean }).retry : false;
+          return { success: false, error: message, had404: retry || had404 };
         }
 
         const parsed = parseResponse(json);
@@ -301,7 +306,9 @@ export abstract class TwitterClientBase {
           const json = (await response.json()) as Record<string, unknown>;
           const gqlError = errorChecker(json);
           if (gqlError) {
-            return { success: false, error: gqlError, had404 };
+            const isObj = typeof gqlError === 'object' && gqlError !== null;
+            const message = isObj ? (gqlError as { message: string }).message : (gqlError as string);
+            return { success: false, error: message, had404 };
           }
           const parsed = parseResponse(json);
           if (parsed !== undefined) {
@@ -330,7 +337,7 @@ export abstract class TwitterClientBase {
     checkError?: GqlErrorChecker,
   ): Promise<GqlResult<T>> {
     const first = await this.graphqlFetchWithRetry(opts, parseResponse, checkError);
-    if (first.success || !first.had404) {
+    if (first.success || !('had404' in first && first.had404)) {
       return first;
     }
     await this.refreshQueryIds();
