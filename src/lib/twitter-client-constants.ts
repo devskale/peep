@@ -2,7 +2,6 @@
 import queryIds from './query-ids.json' with { type: 'json' };
 
 export const TWITTER_API_BASE = 'https://x.com/i/api/graphql';
-export const TWITTER_GRAPHQL_POST_URL = 'https://x.com/i/api/graphql';
 export const TWITTER_UPLOAD_URL = 'https://upload.twitter.com/i/media/upload.json';
 export const TWITTER_MEDIA_METADATA_URL = 'https://x.com/i/api/1.1/media/metadata/create.json';
 export const TWITTER_STATUS_UPDATE_URL = 'https://x.com/i/api/1.1/statuses/update.json';

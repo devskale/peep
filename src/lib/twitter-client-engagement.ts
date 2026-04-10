@@ -1,5 +1,5 @@
 import type { AbstractConstructor, Mixin, TwitterClientBase } from './twitter-client-base.js';
-import { type OperationName, TWITTER_API_BASE } from './twitter-client-constants.js';
+import type { OperationName } from './twitter-client-constants.js';
 import type { BookmarkMutationResult } from './twitter-client-types.js';
 
 export interface TwitterClientEngagementMethods {

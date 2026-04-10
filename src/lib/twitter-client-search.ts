@@ -3,8 +3,6 @@ import { buildSearchFeatures } from './twitter-client-features.js';
 import type { SearchResult, TweetData } from './twitter-client-types.js';
 import { extractCursorFromInstructions, parseTweetsFromInstructions } from './twitter-client-utils.js';
 
-const RAW_QUERY_MISSING_REGEX = /must be defined/i;
-
 /** Options for search methods */
 export interface SearchFetchOptions {
   /** Include raw GraphQL response in `_raw` field */
@@ -21,27 +19,6 @@ export interface SearchPaginationOptions extends SearchFetchOptions {
 export interface TwitterClientSearchMethods {
   search(query: string, count?: number, options?: SearchFetchOptions): Promise<SearchResult>;
   getAllSearchResults(query: string, options?: SearchPaginationOptions): Promise<SearchResult>;
-}
-
-function isQueryIdMismatch(payload: string): boolean {
-  try {
-    const parsed = JSON.parse(payload) as {
-      errors?: Array<{ message?: string; path?: string[]; extensions?: { code?: string } }>;
-    };
-    return (
-      parsed.errors?.some((error) => {
-        if (error?.extensions?.code === 'GRAPHQL_VALIDATION_FAILED') {
-          return true;
-        }
-        if (error?.path?.includes('rawQuery') && RAW_QUERY_MISSING_REGEX.test(error.message ?? '')) {
-          return true;
-        }
-        return false;
-      }) ?? false
-    );
-  } catch {
-    return false;
-  }
 }
 
 export function withSearch<TBase extends AbstractConstructor<TwitterClientBase>>(
@@ -86,31 +63,32 @@ export function withSearch<TBase extends AbstractConstructor<TwitterClientBase>>
       const fetchPage = async (pageCount: number, pageCursor?: string): Promise<SearchData | string> => {
         const queryIds = await this.getSearchTimelineQueryIds();
 
-        type SearchResponse = {
-          tweets: TweetData[];
-          cursor?: string;
-          had404: boolean;
-        };
-
         const parseSearchResults = (json: Record<string, unknown>): SearchData | undefined => {
           const data = json.data as Record<string, unknown> | undefined;
           const searchByRawQuery = data?.search_by_raw_query as Record<string, unknown> | undefined;
           const searchTimeline = searchByRawQuery?.search_timeline as Record<string, unknown> | undefined;
           const timeline = searchTimeline?.timeline as Record<string, unknown> | undefined;
           const instructions = timeline?.instructions as Array<Record<string, unknown>> | undefined;
-          const pageTweets = parseTweetsFromInstructions(instructions as Parameters<typeof parseTweetsFromInstructions>[0], { quoteDepth: this.quoteDepth, includeRaw });
-          const nextCursor = extractCursorFromInstructions(instructions as Parameters<typeof extractCursorFromInstructions>[0]);
+          const pageTweets = parseTweetsFromInstructions(
+            instructions as Parameters<typeof parseTweetsFromInstructions>[0],
+            { quoteDepth: this.quoteDepth, includeRaw },
+          );
+          const nextCursor = extractCursorFromInstructions(
+            instructions as Parameters<typeof extractCursorFromInstructions>[0],
+          );
           return { tweets: pageTweets, cursor: nextCursor };
         };
 
         // Custom error checker: detect query ID mismatch (should trigger refresh)
         const checkErrors = (json: Record<string, unknown>): string | undefined => {
           const errors = json.errors as Array<{ message?: string; extensions?: { code?: string } }> | undefined;
-          if (!errors || errors.length === 0) return undefined;
-          const shouldRefresh = errors.some(
-            (e) => e?.extensions?.code === 'GRAPHQL_VALIDATION_FAILED',
-          );
-          if (shouldRefresh) return '__query_id_mismatch__';
+          if (!errors || errors.length === 0) {
+            return undefined;
+          }
+          const shouldRefresh = errors.some((e) => e?.extensions?.code === 'GRAPHQL_VALIDATION_FAILED');
+          if (shouldRefresh) {
+            return '__query_id_mismatch__';
+          }
           return errors.map((e) => e.message ?? 'Unknown error').join(', ');
         };
 
@@ -133,7 +111,9 @@ export function withSearch<TBase extends AbstractConstructor<TwitterClientBase>>
           checkErrors,
         );
 
-        if (result.success) return result.data;
+        if (result.success) {
+          return result.data;
+        }
         return result.error;
       };
 

@@ -1,7 +1,7 @@
 import type { AbstractConstructor, Mixin, TwitterClientBase } from './twitter-client-base.js';
 import { buildListsFeatures } from './twitter-client-features.js';
 import type { TimelineFetchOptions, TimelinePaginationOptions } from './twitter-client-timelines.js';
-import type { GraphqlTweetResult, ListsResult, SearchResult, TweetData, TwitterList } from './twitter-client-types.js';
+import type { ListsResult, SearchResult, TweetData, TwitterList } from './twitter-client-types.js';
 import { extractCursorFromInstructions, parseTweetsFromInstructions } from './twitter-client-utils.js';
 
 export interface TwitterClientListMethods {
@@ -242,8 +242,13 @@ export function withLists<TBase extends AbstractConstructor<TwitterClientBase>>(
           const tweetsTimeline = list?.tweets_timeline as Record<string, unknown> | undefined;
           const timeline = tweetsTimeline?.timeline as Record<string, unknown> | undefined;
           const instructions = timeline?.instructions as Array<Record<string, unknown>> | undefined;
-          const pageTweets = parseTweetsFromInstructions(instructions as Parameters<typeof parseTweetsFromInstructions>[0], { quoteDepth: this.quoteDepth, includeRaw });
-          const nextCursor = extractCursorFromInstructions(instructions as Parameters<typeof extractCursorFromInstructions>[0]);
+          const pageTweets = parseTweetsFromInstructions(
+            instructions as Parameters<typeof parseTweetsFromInstructions>[0],
+            { quoteDepth: this.quoteDepth, includeRaw },
+          );
+          const nextCursor = extractCursorFromInstructions(
+            instructions as Parameters<typeof extractCursorFromInstructions>[0],
+          );
           return { tweets: pageTweets, cursor: nextCursor };
         };
 
@@ -257,7 +262,9 @@ export function withLists<TBase extends AbstractConstructor<TwitterClientBase>>(
           parseTimeline,
         );
 
-        if (result.success) return result.data;
+        if (result.success) {
+          return result.data;
+        }
         return result.error;
       };
 

@@ -1,6 +1,6 @@
 import type { AbstractConstructor, Mixin, TwitterClientBase } from './twitter-client-base.js';
 import { buildHomeTimelineFeatures } from './twitter-client-features.js';
-import type { GraphqlTweetResult, SearchResult, TweetData } from './twitter-client-types.js';
+import type { SearchResult, TweetData } from './twitter-client-types.js';
 import { extractCursorFromInstructions, parseTweetsFromInstructions } from './twitter-client-utils.js';
 
 const QUERY_UNSPECIFIED_REGEX = /query:\s*unspecified/i;
@@ -74,17 +74,26 @@ export function withHome<TBase extends AbstractConstructor<TwitterClientBase>>(
           const home = data?.home as Record<string, unknown> | undefined;
           const homeTimelineUrt = home?.home_timeline_urt as Record<string, unknown> | undefined;
           const instructions = homeTimelineUrt?.instructions as Array<Record<string, unknown>> | undefined;
-          const pageTweets = parseTweetsFromInstructions(instructions as Parameters<typeof parseTweetsFromInstructions>[0], { quoteDepth: this.quoteDepth, includeRaw });
-          const nextCursor = extractCursorFromInstructions(instructions as Parameters<typeof extractCursorFromInstructions>[0]);
+          const pageTweets = parseTweetsFromInstructions(
+            instructions as Parameters<typeof parseTweetsFromInstructions>[0],
+            { quoteDepth: this.quoteDepth, includeRaw },
+          );
+          const nextCursor = extractCursorFromInstructions(
+            instructions as Parameters<typeof extractCursorFromInstructions>[0],
+          );
           return { tweets: pageTweets, cursor: nextCursor };
         };
 
         // Custom error checker: detect query unspecified (should trigger refresh)
         const checkErrors = (json: Record<string, unknown>): string | undefined => {
           const errors = json.errors as Array<{ message?: string }> | undefined;
-          if (!errors || errors.length === 0) return undefined;
+          if (!errors || errors.length === 0) {
+            return undefined;
+          }
           const errorMessage = errors.map((e) => e.message ?? 'Unknown error').join(', ');
-          if (QUERY_UNSPECIFIED_REGEX.test(errorMessage)) return '__query_id_mismatch__';
+          if (QUERY_UNSPECIFIED_REGEX.test(errorMessage)) {
+            return '__query_id_mismatch__';
+          }
           return errorMessage;
         };
 
@@ -106,7 +115,9 @@ export function withHome<TBase extends AbstractConstructor<TwitterClientBase>>(
           checkErrors,
         );
 
-        if (result.success) return result.data;
+        if (result.success) {
+          return result.data;
+        }
         return result.error;
       };
 

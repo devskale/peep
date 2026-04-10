@@ -69,8 +69,14 @@ export function withUserLookup<TBase extends AbstractConstructor<TwitterClientBa
         const restId = typeof result?.rest_id === 'string' ? result.rest_id : undefined;
         const legacy = result?.legacy as Record<string, unknown> | undefined;
         const core = result?.core as Record<string, unknown> | undefined;
-        const username = typeof legacy?.screen_name === 'string' ? legacy.screen_name : typeof core?.screen_name === 'string' ? core.screen_name : undefined;
-        const name = typeof legacy?.name === 'string' ? legacy.name : typeof core?.name === 'string' ? core.name : username;
+        const username =
+          typeof legacy?.screen_name === 'string'
+            ? legacy.screen_name
+            : typeof core?.screen_name === 'string'
+              ? core.screen_name
+              : undefined;
+        const name =
+          typeof legacy?.name === 'string' ? legacy.name : typeof core?.name === 'string' ? core.name : username;
 
         if (restId && username) {
           return { userId: restId, username, name: name || username };
@@ -213,11 +219,14 @@ export function withUserLookup<TBase extends AbstractConstructor<TwitterClientBa
         const userResult = data?.user_result_by_screen_name as Record<string, unknown> | undefined;
         const result = userResult?.result as Record<string, unknown> | undefined;
         const about = result?.about_profile as Record<string, unknown> | undefined;
-        if (!about) throw new Error('Missing about_profile');
+        if (!about) {
+          throw new Error('Missing about_profile');
+        }
         return {
           accountBasedIn: typeof about.account_based_in === 'string' ? about.account_based_in : undefined,
           source: typeof about.source === 'string' ? about.source : undefined,
-          createdCountryAccurate: typeof about.created_country_accurate === 'boolean' ? about.created_country_accurate : undefined,
+          createdCountryAccurate:
+            typeof about.created_country_accurate === 'boolean' ? about.created_country_accurate : undefined,
           locationAccurate: typeof about.location_accurate === 'boolean' ? about.location_accurate : undefined,
           learnMoreUrl: typeof about.learn_more_url === 'string' ? about.learn_more_url : undefined,
         };

@@ -1,7 +1,7 @@
 import type { AbstractConstructor, Mixin, TwitterClientBase } from './twitter-client-base.js';
 import { TWITTER_STATUS_UPDATE_URL } from './twitter-client-constants.js';
 import { buildTweetCreateFeatures } from './twitter-client-features.js';
-import type { CreateTweetResponse, TweetResult } from './twitter-client-types.js';
+import type { TweetResult } from './twitter-client-types.js';
 
 export interface TwitterClientPostingMethods {
   tweet(text: string, mediaIds?: string[]): Promise<TweetResult>;
@@ -65,15 +65,21 @@ export function withPosting<TBase extends AbstractConstructor<TwitterClientBase>
         const createTweet = data?.create_tweet as Record<string, unknown> | undefined;
         const tweetResults = createTweet?.tweet_results as Record<string, unknown> | undefined;
         const result = tweetResults?.result as Record<string, unknown> | undefined;
-        if (typeof result?.rest_id === 'string') return result.rest_id;
+        if (typeof result?.rest_id === 'string') {
+          return result.rest_id;
+        }
         // If data exists but has no rest_id, throw a specific error
-        if (data?.create_tweet) throw new Error('Tweet created but no ID returned');
+        if (data?.create_tweet) {
+          throw new Error('Tweet created but no ID returned');
+        }
         return undefined;
       };
 
       const checkErrors = (json: Record<string, unknown>): string | undefined => {
         const errors = json.errors as Array<{ message: string; code?: number }> | undefined;
-        if (!errors || errors.length === 0) return undefined;
+        if (!errors || errors.length === 0) {
+          return undefined;
+        }
         return errors.map((e) => (typeof e.code === 'number' ? `${e.message} (${e.code})` : e.message)).join(', ');
       };
 
@@ -98,7 +104,9 @@ export function withPosting<TBase extends AbstractConstructor<TwitterClientBase>
       if (result.error.includes('(226)')) {
         const fallback = await this.tryStatusUpdateFallback(variables);
         if (fallback) {
-          if (fallback.success) return fallback;
+          if (fallback.success) {
+            return fallback;
+          }
           // Surface fallback error alongside original 226 error
           return { success: false, error: `${result.error}, fallback: ${fallback.error}` };
         }

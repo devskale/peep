@@ -1,11 +1,7 @@
-import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { TwitterClient } from '../src/lib/twitter-client.js';
-import type {
-  GqlFetchOptions,
-  GqlResponseParser,
-  GqlResult,
-} from '../src/lib/twitter-client-base.js';
-import { validCookies, type TwitterClientPrivate } from './twitter-client-fixtures.js';
+import type { GqlFetchOptions, GqlResponseParser } from '../src/lib/twitter-client-base.js';
+import { type TwitterClientPrivate, validCookies } from './twitter-client-fixtures.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -62,7 +58,9 @@ describe('graphqlFetchWithRetry', () => {
 
     const result = await client.graphqlFetchWithRetry(makeOpts(), parseData);
     expect(result.success).toBe(true);
-    if (result.success) expect(result.data.value).toBe('hello');
+    if (result.success) {
+      expect(result.data.value).toBe('hello');
+    }
     expect(globalThis.fetch).toHaveBeenCalledTimes(1);
   });
 
@@ -81,13 +79,12 @@ describe('graphqlFetchWithRetry', () => {
       });
     }) as unknown as typeof fetch;
 
-    const result = await client.graphqlFetchWithRetry(
-      makeOpts({ queryIds: ['id-a', 'id-b'] }),
-      parseData,
-    );
+    const result = await client.graphqlFetchWithRetry(makeOpts({ queryIds: ['id-a', 'id-b'] }), parseData);
 
     expect(result.success).toBe(true);
-    if (result.success) expect(result.data.value).toBe('fallback');
+    if (result.success) {
+      expect(result.data.value).toBe('fallback');
+    }
     expect(globalThis.fetch).toHaveBeenCalledTimes(2);
   });
 
@@ -98,10 +95,7 @@ describe('graphqlFetchWithRetry', () => {
       return new Response('Not Found', { status: 404 });
     }) as unknown as typeof fetch;
 
-    const result = await client.graphqlFetchWithRetry(
-      makeOpts({ queryIds: ['id-a', 'id-b'] }),
-      parseData,
-    );
+    const result = await client.graphqlFetchWithRetry(makeOpts({ queryIds: ['id-a', 'id-b'] }), parseData);
 
     expect(result.success).toBe(false);
     if (!result.success) {
@@ -130,10 +124,10 @@ describe('graphqlFetchWithRetry', () => {
     const client = createClient();
 
     globalThis.fetch = vi.fn(async () => {
-      return new Response(
-        JSON.stringify({ errors: [{ message: 'Something went wrong' }] }),
-        { status: 200, headers: { 'content-type': 'application/json' } },
-      );
+      return new Response(JSON.stringify({ errors: [{ message: 'Something went wrong' }] }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
     }) as unknown as typeof fetch;
 
     const result = await client.graphqlFetchWithRetry(makeOpts(), parseData);
@@ -188,7 +182,9 @@ describe('graphqlFetchWithRetry', () => {
     );
 
     expect(result.success).toBe(true);
-    if (result.success) expect(result.data.value).toBe('generic-post');
+    if (result.success) {
+      expect(result.data.value).toBe('generic-post');
+    }
     expect(globalThis.fetch).toHaveBeenCalledTimes(3);
   });
 });
@@ -256,7 +252,9 @@ describe('graphqlFetchWithRefresh', () => {
 
     expect(refreshSpy).toHaveBeenCalledTimes(1);
     expect(result.success).toBe(true);
-    if (result.success) expect(result.data.value).toBe('after-refresh');
+    if (result.success) {
+      expect(result.data.value).toBe('after-refresh');
+    }
   });
 
   it('still returns error if refresh + retry also fails', async () => {
@@ -271,7 +269,9 @@ describe('graphqlFetchWithRefresh', () => {
 
     expect(refreshSpy).toHaveBeenCalledTimes(1);
     expect(result.success).toBe(false);
-    if (!result.success) expect(result.had404).toBe(true);
+    if (!result.success) {
+      expect(result.had404).toBe(true);
+    }
   });
 });
 
@@ -304,15 +304,14 @@ describe('graphqlMutationWithRetry', () => {
       });
     }) as unknown as typeof fetch;
 
-    const result = await client.graphqlMutationWithRetry(
-      makeOpts({ method: 'POST' }),
-      parseData,
-    );
+    const result = await client.graphqlMutationWithRetry(makeOpts({ method: 'POST' }), parseData);
 
     // Generic fallback succeeded, so no refresh needed
     expect(refreshSpy).not.toHaveBeenCalled();
     expect(result.success).toBe(true);
-    if (result.success) expect(result.data.value).toBe('mutation-ok');
+    if (result.success) {
+      expect(result.data.value).toBe('mutation-ok');
+    }
   });
 
   it('refreshes when both operation URL and generic POST 404, then retries both', async () => {
@@ -336,13 +335,12 @@ describe('graphqlMutationWithRetry', () => {
       });
     }) as unknown as typeof fetch;
 
-    const result = await client.graphqlMutationWithRetry(
-      makeOpts({ method: 'POST' }),
-      parseData,
-    );
+    const result = await client.graphqlMutationWithRetry(makeOpts({ method: 'POST' }), parseData);
 
     expect(refreshSpy).toHaveBeenCalledTimes(1);
     expect(result.success).toBe(true);
-    if (result.success) expect(result.data.value).toBe('after-refresh-mutation');
+    if (result.success) {
+      expect(result.data.value).toBe('after-refresh-mutation');
+    }
   });
 });

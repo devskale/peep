@@ -1,6 +1,11 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 import { runtimeQueryIds } from './runtime-query-ids.js';
-import { type OperationName, QUERY_IDS, TARGET_QUERY_ID_OPERATIONS, TWITTER_API_BASE } from './twitter-client-constants.js';
+import {
+  type OperationName,
+  QUERY_IDS,
+  TARGET_QUERY_ID_OPERATIONS,
+  TWITTER_API_BASE,
+} from './twitter-client-constants.js';
 import type { CurrentUserResult, TwitterClientOptions } from './twitter-client-types.js';
 import { normalizeQuoteDepth } from './twitter-client-utils.js';
 
@@ -33,9 +38,7 @@ export interface GqlFetchOptions {
 }
 
 /** Result returned by the GraphQL fetch helpers. */
-export type GqlResult<T> =
-  | { success: true; data: T }
-  | { success: false; error: string; had404: boolean };
+export type GqlResult<T> = { success: true; data: T } | { success: false; error: string; had404: boolean };
 
 /** Callback that receives a successful JSON response and returns typed data. */
 export type GqlResponseParser<T> = (json: Record<string, unknown>) => T | undefined;
@@ -48,7 +51,9 @@ export const defaultGqlErrorChecker: GqlErrorChecker = (json) => {
   const errors = json.errors;
   if (Array.isArray(errors) && errors.length > 0) {
     const messages = errors
-      .map((e: unknown) => (typeof e === 'object' && e !== null && 'message' in e ? (e as { message: string }).message : undefined))
+      .map((e: unknown) =>
+        typeof e === 'object' && e !== null && 'message' in e ? (e as { message: string }).message : undefined,
+      )
       .filter((m): m is string => typeof m === 'string');
     if (messages.length > 0) {
       return messages.join(', ');
@@ -112,18 +117,6 @@ export abstract class TwitterClientBase {
     } catch {
       // ignore refresh failures; callers will fall back to baked-in IDs
     }
-  }
-
-  protected async withRefreshedQueryIdsOn404<T extends { success: boolean; had404?: boolean }>(
-    attempt: () => Promise<T>,
-  ): Promise<{ result: T; refreshed: boolean }> {
-    const firstAttempt = await attempt();
-    if (firstAttempt.success || !firstAttempt.had404) {
-      return { result: firstAttempt, refreshed: false };
-    }
-    await this.refreshQueryIds();
-    const secondAttempt = await attempt();
-    return { result: secondAttempt, refreshed: true };
   }
 
   protected async getTweetDetailQueryIds(): Promise<string[]> {

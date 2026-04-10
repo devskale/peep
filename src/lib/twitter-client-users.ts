@@ -1,10 +1,6 @@
-import {
-  SETTINGS_NAME_REGEX,
-  SETTINGS_SCREEN_NAME_REGEX,
-  SETTINGS_USER_ID_REGEX,
-} from './twitter-client-constants.js';
-import { buildFollowingFeatures } from './twitter-client-features.js';
 import type { AbstractConstructor, Mixin, TwitterClientBase } from './twitter-client-base.js';
+import { SETTINGS_NAME_REGEX, SETTINGS_SCREEN_NAME_REGEX, SETTINGS_USER_ID_REGEX } from './twitter-client-constants.js';
+import { buildFollowingFeatures } from './twitter-client-features.js';
 import type { CurrentUserResult, FollowingResult, TwitterUser } from './twitter-client-types.js';
 import { extractCursorFromInstructions, parseUsersFromInstructions } from './twitter-client-utils.js';
 
@@ -319,7 +315,9 @@ export function withUsers<TBase extends AbstractConstructor<TwitterClientBase>>(
         const tl = timeline?.timeline as Record<string, unknown> | undefined;
         const instructions = tl?.instructions as Array<Record<string, unknown>> | undefined;
         const users = parseUsersFromInstructions(instructions as Parameters<typeof parseUsersFromInstructions>[0]);
-        const nextCursor = extractCursorFromInstructions(instructions as Parameters<typeof extractCursorFromInstructions>[0]);
+        const nextCursor = extractCursorFromInstructions(
+          instructions as Parameters<typeof extractCursorFromInstructions>[0],
+        );
         return { users, nextCursor };
       };
 
@@ -367,7 +365,9 @@ export function withUsers<TBase extends AbstractConstructor<TwitterClientBase>>(
         const tl = timeline?.timeline as Record<string, unknown> | undefined;
         const instructions = tl?.instructions as Array<Record<string, unknown>> | undefined;
         const users = parseUsersFromInstructions(instructions as Parameters<typeof parseUsersFromInstructions>[0]);
-        const nextCursor = extractCursorFromInstructions(instructions as Parameters<typeof extractCursorFromInstructions>[0]);
+        const nextCursor = extractCursorFromInstructions(
+          instructions as Parameters<typeof extractCursorFromInstructions>[0],
+        );
         return { users, nextCursor };
       };
 

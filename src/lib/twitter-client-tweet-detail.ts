@@ -1,6 +1,5 @@
 import { paginateCursor } from './paginate-cursor.js';
 import type { AbstractConstructor, Mixin, TwitterClientBase } from './twitter-client-base.js';
-import { TWITTER_API_BASE } from './twitter-client-constants.js';
 import { buildArticleFeatures, buildArticleFieldToggles, buildTweetDetailFeatures } from './twitter-client-features.js';
 import type { GetTweetResult, GraphqlTweetResult, SearchResult, TweetData } from './twitter-client-types.js';
 import {
@@ -85,7 +84,9 @@ export function withTweetDetails<TBase extends AbstractConstructor<TwitterClient
             const itemContent = content?.itemContent as Record<string, unknown> | undefined;
             const tweetResults = itemContent?.tweet_results as Record<string, unknown> | undefined;
             const tweetResult = tweetResults?.result as GraphqlTweetResult | undefined;
-            if (tweetResult?.rest_id !== tweetId) continue;
+            if (tweetResult?.rest_id !== tweetId) {
+              continue;
+            }
             const articleResult = tweetResult.article?.article_results?.result;
             const title = firstText(articleResult?.title, tweetResult.article?.title);
             const plainText = firstText(articleResult?.plain_text, tweetResult.article?.plain_text);
@@ -106,7 +107,9 @@ export function withTweetDetails<TBase extends AbstractConstructor<TwitterClient
         parseArticle,
       );
 
-      if (result.success) return result.data;
+      if (result.success) {
+        return result.data;
+      }
       return {};
     }
 
@@ -168,17 +171,23 @@ export function withTweetDetails<TBase extends AbstractConstructor<TwitterClient
         withArticleRichContentState: true,
       };
 
-      type TweetDetailData = NonNullable<Awaited<ReturnType<typeof this.fetchTweetDetail>> extends { success: true; data: infer D } ? D : never>;
+      type TweetDetailData = NonNullable<
+        Awaited<ReturnType<typeof this.fetchTweetDetail>> extends { success: true; data: infer D } ? D : never
+      >;
 
       // Custom error checker: allow partial errors when data is present
       const checkErrors = (json: Record<string, unknown>): string | undefined => {
         const errors = json.errors as Array<{ message: string; code?: number }> | undefined;
-        if (!errors || errors.length === 0) return undefined;
+        if (!errors || errors.length === 0) {
+          return undefined;
+        }
         const hasUsableData = Boolean(
           (json.data as Record<string, unknown>)?.tweetResult ||
-          (json.data as Record<string, unknown>)?.threaded_conversation_with_injections_v2,
+            (json.data as Record<string, unknown>)?.threaded_conversation_with_injections_v2,
         );
-        if (hasUsableData) return undefined;
+        if (hasUsableData) {
+          return undefined;
+        }
         return errors.map((e) => e.message).join(', ');
       };
 

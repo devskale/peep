@@ -142,7 +142,9 @@ export function withFollow<TBase extends AbstractConstructor<TwitterClientBase>>
         const data = json.data as Record<string, unknown> | undefined;
         const user = data?.user as Record<string, unknown> | undefined;
         const result = user?.result as Record<string, unknown> | undefined;
-        if (!result) return undefined;
+        if (!result) {
+          return undefined;
+        }
         const restId = typeof result.rest_id === 'string' ? result.rest_id : undefined;
         const legacy = result.legacy as Record<string, unknown> | undefined;
         const screenName = typeof legacy?.screen_name === 'string' ? legacy.screen_name : undefined;

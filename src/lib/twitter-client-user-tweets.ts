@@ -1,6 +1,6 @@
 import type { AbstractConstructor, Mixin, TwitterClientBase } from './twitter-client-base.js';
 import { buildUserTweetsFeatures } from './twitter-client-features.js';
-import type { GraphqlTweetResult, SearchResult, TweetData } from './twitter-client-types.js';
+import type { SearchResult, TweetData } from './twitter-client-types.js';
 import { extractCursorFromInstructions, parseTweetsFromInstructions } from './twitter-client-utils.js';
 
 /** Options for user tweets fetch methods */
@@ -82,8 +82,13 @@ export function withUserTweets<TBase extends AbstractConstructor<TwitterClientBa
           const timeline = result?.timeline as Record<string, unknown> | undefined;
           const tl = timeline?.timeline as Record<string, unknown> | undefined;
           const instructions = tl?.instructions as Array<Record<string, unknown>> | undefined;
-          const pageTweets = parseTweetsFromInstructions(instructions as Parameters<typeof parseTweetsFromInstructions>[0], { quoteDepth: this.quoteDepth, includeRaw });
-          const pageCursor = extractCursorFromInstructions(instructions as Parameters<typeof extractCursorFromInstructions>[0]);
+          const pageTweets = parseTweetsFromInstructions(
+            instructions as Parameters<typeof parseTweetsFromInstructions>[0],
+            { quoteDepth: this.quoteDepth, includeRaw },
+          );
+          const pageCursor = extractCursorFromInstructions(
+            instructions as Parameters<typeof extractCursorFromInstructions>[0],
+          );
           return { tweets: pageTweets, cursor: pageCursor };
         };
 
@@ -105,7 +110,9 @@ export function withUserTweets<TBase extends AbstractConstructor<TwitterClientBa
           parseUserTweets,
         );
 
-        if (result.success) return result.data;
+        if (result.success) {
+          return result.data;
+        }
         return result.error;
       };
 

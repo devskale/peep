@@ -1,6 +1,6 @@
 import type { AbstractConstructor, Mixin, TwitterClientBase } from './twitter-client-base.js';
 import { buildBookmarksFeatures, buildLikesFeatures } from './twitter-client-features.js';
-import type { GraphqlTweetResult, SearchResult, TweetData } from './twitter-client-types.js';
+import type { SearchResult, TweetData } from './twitter-client-types.js';
 import { extractCursorFromInstructions, parseTweetsFromInstructions } from './twitter-client-utils.js';
 
 /** Options for timeline fetch methods */
@@ -32,17 +32,6 @@ export function withTimelines<TBase extends AbstractConstructor<TwitterClientBas
     // biome-ignore lint/complexity/noUselessConstructor lint/suspicious/noExplicitAny: TS mixin constructor requirement.
     constructor(...args: any[]) {
       super(...args);
-    }
-
-    private logBookmarksDebug(message: string, data?: Record<string, unknown>): void {
-      if (process.env.PEEP_DEBUG_BOOKMARKS !== '1') {
-        return;
-      }
-      if (data) {
-        console.error(`[peep][debug][bookmarks] ${message}`, JSON.stringify(data));
-      } else {
-        console.error(`[peep][debug][bookmarks] ${message}`);
-      }
     }
 
     private async getBookmarksQueryIds(): Promise<string[]> {
@@ -109,15 +98,22 @@ export function withTimelines<TBase extends AbstractConstructor<TwitterClientBas
           const timeline = result?.timeline as Record<string, unknown> | undefined;
           const tl = timeline?.timeline as Record<string, unknown> | undefined;
           const instructions = tl?.instructions as Array<Record<string, unknown>> | undefined;
-          const pageTweets = parseTweetsFromInstructions(instructions as Parameters<typeof parseTweetsFromInstructions>[0], { quoteDepth: this.quoteDepth, includeRaw });
-          const extractedCursor = extractCursorFromInstructions(instructions as Parameters<typeof extractCursorFromInstructions>[0]);
+          const pageTweets = parseTweetsFromInstructions(
+            instructions as Parameters<typeof parseTweetsFromInstructions>[0],
+            { quoteDepth: this.quoteDepth, includeRaw },
+          );
+          const extractedCursor = extractCursorFromInstructions(
+            instructions as Parameters<typeof extractCursorFromInstructions>[0],
+          );
           return { tweets: pageTweets, cursor: extractedCursor };
         };
 
         // Custom error checker: allow partial errors when instructions are present
         const checkErrors = (json: Record<string, unknown>): string | undefined => {
           const errors = json.errors as Array<{ message?: string }> | undefined;
-          if (!errors || errors.length === 0) return undefined;
+          if (!errors || errors.length === 0) {
+            return undefined;
+          }
           const message = errors.map((e) => e.message ?? 'Unknown error').join(', ');
           const data = json.data as Record<string, unknown> | undefined;
           const user = data?.user as Record<string, unknown> | undefined;
@@ -125,8 +121,12 @@ export function withTimelines<TBase extends AbstractConstructor<TwitterClientBas
           const timeline = result?.timeline as Record<string, unknown> | undefined;
           const tl = timeline?.timeline as Record<string, unknown> | undefined;
           const instructions = tl?.instructions;
-          if (instructions) return undefined; // data present, ignore non-fatal errors
-          if (message.includes('Query: Unspecified')) return '__query_id_mismatch__';
+          if (instructions) {
+            return undefined; // data present, ignore non-fatal errors
+          }
+          if (message.includes('Query: Unspecified')) {
+            return '__query_id_mismatch__';
+          }
           return message;
         };
 
@@ -149,7 +149,9 @@ export function withTimelines<TBase extends AbstractConstructor<TwitterClientBas
           checkErrors,
         );
 
-        if (result.success) return result.data;
+        if (result.success) {
+          return result.data;
+        }
         return result.error;
       };
 
@@ -235,20 +237,29 @@ export function withTimelines<TBase extends AbstractConstructor<TwitterClientBas
           const bookmarkTimelineV2 = data?.bookmark_timeline_v2 as Record<string, unknown> | undefined;
           const timeline = bookmarkTimelineV2?.timeline as Record<string, unknown> | undefined;
           const instructions = timeline?.instructions as Array<Record<string, unknown>> | undefined;
-          const pageTweets = parseTweetsFromInstructions(instructions as Parameters<typeof parseTweetsFromInstructions>[0], { quoteDepth: this.quoteDepth, includeRaw });
-          const nextCursor = extractCursorFromInstructions(instructions as Parameters<typeof extractCursorFromInstructions>[0]);
+          const pageTweets = parseTweetsFromInstructions(
+            instructions as Parameters<typeof parseTweetsFromInstructions>[0],
+            { quoteDepth: this.quoteDepth, includeRaw },
+          );
+          const nextCursor = extractCursorFromInstructions(
+            instructions as Parameters<typeof extractCursorFromInstructions>[0],
+          );
           return { tweets: pageTweets, cursor: nextCursor };
         };
 
         // Custom error checker: allow non-fatal errors when instructions are present
         const checkErrors = (json: Record<string, unknown>): string | undefined => {
           const errors = json.errors as Array<{ message?: string }> | undefined;
-          if (!errors || errors.length === 0) return undefined;
+          if (!errors || errors.length === 0) {
+            return undefined;
+          }
           const data = json.data as Record<string, unknown> | undefined;
           const bookmarkTimelineV2 = data?.bookmark_timeline_v2 as Record<string, unknown> | undefined;
           const timeline = bookmarkTimelineV2?.timeline as Record<string, unknown> | undefined;
           const instructions = timeline?.instructions;
-          if (instructions) return undefined; // data present, ignore non-fatal errors
+          if (instructions) {
+            return undefined; // data present, ignore non-fatal errors
+          }
           return errors.map((e) => e.message ?? 'Unknown error').join(', ');
         };
 
@@ -263,7 +274,9 @@ export function withTimelines<TBase extends AbstractConstructor<TwitterClientBas
           checkErrors,
         );
 
-        if (result.success) return result.data;
+        if (result.success) {
+          return result.data;
+        }
         return result.error;
       };
 
@@ -329,20 +342,29 @@ export function withTimelines<TBase extends AbstractConstructor<TwitterClientBas
           const bookmarkCollectionTimeline = data?.bookmark_collection_timeline as Record<string, unknown> | undefined;
           const timeline = bookmarkCollectionTimeline?.timeline as Record<string, unknown> | undefined;
           const instructions = timeline?.instructions as Array<Record<string, unknown>> | undefined;
-          const pageTweets = parseTweetsFromInstructions(instructions as Parameters<typeof parseTweetsFromInstructions>[0], { quoteDepth: this.quoteDepth, includeRaw });
-          const nextCursor = extractCursorFromInstructions(instructions as Parameters<typeof extractCursorFromInstructions>[0]);
+          const pageTweets = parseTweetsFromInstructions(
+            instructions as Parameters<typeof parseTweetsFromInstructions>[0],
+            { quoteDepth: this.quoteDepth, includeRaw },
+          );
+          const nextCursor = extractCursorFromInstructions(
+            instructions as Parameters<typeof extractCursorFromInstructions>[0],
+          );
           return { tweets: pageTweets, cursor: nextCursor };
         };
 
         // Custom error checker: allow non-fatal errors when instructions are present
         const checkErrors = (json: Record<string, unknown>): string | undefined => {
           const errors = json.errors as Array<{ message?: string }> | undefined;
-          if (!errors || errors.length === 0) return undefined;
+          if (!errors || errors.length === 0) {
+            return undefined;
+          }
           const data = json.data as Record<string, unknown> | undefined;
           const bookmarkCollectionTimeline = data?.bookmark_collection_timeline as Record<string, unknown> | undefined;
           const timeline = bookmarkCollectionTimeline?.timeline as Record<string, unknown> | undefined;
           const instructions = timeline?.instructions;
-          if (instructions) return undefined;
+          if (instructions) {
+            return undefined;
+          }
           return errors.map((e) => e.message ?? 'Unknown error').join(', ');
         };
 
@@ -363,7 +385,9 @@ export function withTimelines<TBase extends AbstractConstructor<TwitterClientBas
           checkErrors,
         );
 
-        if (result.success) return result.data;
+        if (result.success) {
+          return result.data;
+        }
 
         // If the error is about the $count variable, retry without it
         if (result.error?.includes('Variable "$count"')) {
@@ -381,7 +405,9 @@ export function withTimelines<TBase extends AbstractConstructor<TwitterClientBas
             parseFolderTimeline,
             checkErrors,
           );
-          if (retryResult.success) return retryResult.data;
+          if (retryResult.success) {
+            return retryResult.data;
+          }
           return retryResult.error;
         }
 
