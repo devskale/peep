@@ -414,7 +414,11 @@ The codebase went through 6 refactoring passes on the `refactor/centralize-featu
 | 6 | Migrate news.ts | 1 file | — | last raw `fetchWithTimeout` → `graphqlFetchWithRefresh` |
 | — | Bugfix: paginateCursor | 1 file | — | `break` → `return` (inner loop break didn't stop outer while-loop) |
 
-**Verification**: all 434 tests pass. CLI commands verified: `whoami`, `read`, `search`, `user-tweets`, `bookmarks`, `likes`, `following`, `followers`, `mentions`, `news`, `replies`, `thread`, `about`, `check`, `query-ids`, `lists`, `list-timeline`.
+**Verification**: all 434 tests pass. CLI commands verified: `whoami`, `read`, `search`, `user-tweets`, `bookmarks`, `likes`, `following`, `followers`, `mentions`, `news`, `replies`, `thread`, `about`, `check`, `query-ids`.
+
+**Feature flag correctness**: Each refactored `build*Features()` builder was verified byte-identical to the original by a script that applies `applyFeatureOverrides()` to both the original inline object and the new spread-based object, then diffs all keys/values. No builder produces a different flag set.
+
+**Known issue — `peep lists` / `peep lists --member-of`**: Both commands fail with `BadRequest: com.twitter.strato.serialization.DecodeException`. This is an X server-side issue (response can't be deserialized) — confirmed present on `main` before any refactoring. Feature flags were verified identical (43 flags). The `ListOwnerships` and `ListMemberships` query IDs may have rotated or X may have changed the response schema. `peep list-timeline` is unaffected.
 
 **Remaining `fetchWithTimeout` calls** (intentionally not GraphQL): REST/v1 endpoints for media uploads, legacy status updates, REST follow/unfollow, and REST user lookup — these use a different auth and response format.
 
