@@ -395,10 +395,40 @@ pnpm run lint
 See [Architecture](docs/ARCHITECTURE.md) for internal details. Key design patterns:
 
 - **Mixin-based client**: `TwitterClient` is composed from ~12 capability mixins (search, bookmarks, posting, etc.) layered on an abstract base class
-- **Unified GraphQL fetch pipeline**: all requests go through `graphqlFetchWithRefresh()` / `graphqlMutationWithRetry()` in the base class — automatic 404-retry with query-ID refresh
+- **Unified GraphQL fetch pipeline**: all GraphQL requests go through `graphqlFetchWithRefresh()` / `graphqlMutationWithRetry()` in the base class — automatic 404-retry with query-ID refresh
 - **Centralized pagination**: `paginateCursor()` handles the page-fetch loop with cursor tracking, deduplication, and optional item/page limits
 - **Layered feature flags**: three base objects (`CORE` → `STANDARD` → `TIMELINE`) eliminate duplication across 14 `build*Features()` builders
 - **Split utility modules**: content-state rendering, tweet mapping, and general utilities live in focused files with re-exports for backward compatibility
+
+### Refactoring Status
+
+The codebase went through 6 refactoring passes on the `refactor/centralize-features` branch, reducing ~1,100 net lines across 20+ source files while preserving all behavior. See individual writeups in `docs/REFACTOR-0{1..4}-*.md`.
+
+| # | Refactor | Files | Net Δ | Key change |
+|---|----------|-------|-------|------------|
+| 1 | Centralize 404-retry | 12 mixins | — | `graphqlFetchWithRetry/Refresh/Mutation` in base class |
+| 2 | Centralize pagination | 8 methods | — | `paginateCursor()` with discriminated union for limit/pageSize |
+| 3 | Centralize feature flags | 14 builders | −161 lines | `CORE` → `STANDARD` → `TIMELINE` layer spread |
+| 4 | Centralize query ID fallbacks | 15 methods / 7 files | +8 lines | `getQueryIdsWithFallbacks()` + `EXTRA_QUERY_ID_FALLBACKS` map |
+| 5 | Split utils.ts | 1 → 3 files | — | content-state (440 lines), tweet-mapping (335 lines), utils (89 lines) |
+| 6 | Migrate news.ts | 1 file | — | last raw `fetchWithTimeout` → `graphqlFetchWithRefresh` |
+| — | Bugfix: paginateCursor | 1 file | — | `break` → `return` (inner loop break didn't stop outer while-loop) |
+
+**Verification**: all 434 tests pass. CLI commands verified: `whoami`, `read`, `search`, `user-tweets`, `bookmarks`, `likes`, `following`, `followers`, `mentions`, `news`, `replies`, `thread`, `about`, `check`, `query-ids`, `lists`, `list-timeline`.
+
+**Remaining `fetchWithTimeout` calls** (intentionally not GraphQL): REST/v1 endpoints for media uploads, legacy status updates, REST follow/unfollow, and REST user lookup — these use a different auth and response format.
+
+## Roadmap
+
+Potential improvements for future work:
+
+- **Typed GraphQL schema**: Replace hand-rolled response parsers with a shared type-safe GraphQL schema (e.g., generated from introspection or documented responses)
+- **Retry with backoff**: Add exponential backoff for 429 rate-limit responses and transient server errors
+- **Cookie refresh**: Detect expired cookies and prompt re-authentication instead of cryptic 403 errors
+- **Migrate REST calls to GraphQL**: The remaining `fetchWithTimeout` calls (follow/unfollow, user lookup) have GraphQL equivalents that could simplify the codebase further
+- **Unified error handling**: Standardize error types across all commands for consistent `--json` error output
+- **Pagination for lists commands**: `peep lists` and `peep list-timeline` don't yet support `--cursor`/`--max-pages` pagination
+- **Test coverage for CLI commands**: Current tests cover the library layer; CLI integration tests would catch command-level regressions
 
 ## Notes
 
