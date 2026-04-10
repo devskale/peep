@@ -22,3 +22,5 @@ twitter-cli.bin
 
 # Binary (build output)
 /peep
+peep-darwin
+bun.lockb
