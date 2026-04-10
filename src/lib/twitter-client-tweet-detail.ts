@@ -67,60 +67,46 @@ export function withTweetDetails<TBase extends AbstractConstructor<TwitterClient
         withClientEventToken: false,
       };
 
-      const params = new URLSearchParams({
-        variables: JSON.stringify(variables),
-        features: JSON.stringify(buildArticleFeatures()),
-        fieldToggles: JSON.stringify(buildArticleFieldToggles()),
-      });
-
       const queryId = await this.getQueryId('UserArticlesTweets');
-      const url = `${TWITTER_API_BASE}/${queryId}/UserArticlesTweets?${params.toString()}`;
 
-      try {
-        const response = await this.fetchWithTimeout(url, { method: 'GET', headers: this.getHeaders() });
-        if (!response.ok) {
-          return {};
-        }
+      type ArticleData = { title?: string; plainText?: string };
 
-        const data = (await response.json()) as {
-          data?: {
-            user?: {
-              result?: {
-                timeline?: {
-                  timeline?: {
-                    instructions?: Array<{
-                      entries?: Array<{
-                        content?: {
-                          itemContent?: {
-                            tweet_results?: { result?: GraphqlTweetResult };
-                          };
-                        };
-                      }>;
-                    }>;
-                  };
-                };
-              };
-            };
-          };
-        };
+      const parseArticle = (json: Record<string, unknown>): ArticleData | undefined => {
+        const data = json.data as Record<string, unknown> | undefined;
+        const user = data?.user as Record<string, unknown> | undefined;
+        const result = user?.result as Record<string, unknown> | undefined;
+        const timeline = result?.timeline as Record<string, unknown> | undefined;
+        const tl = timeline?.timeline as Record<string, unknown> | undefined;
+        const instructions = tl?.instructions as Array<Record<string, unknown>> | undefined;
 
-        const instructions = data.data?.user?.result?.timeline?.timeline?.instructions ?? [];
-        for (const instruction of instructions) {
-          for (const entry of instruction.entries ?? []) {
-            const result = entry.content?.itemContent?.tweet_results?.result;
-            if (result?.rest_id !== tweetId) {
-              continue;
-            }
-            const articleResult = result.article?.article_results?.result;
-            const title = firstText(articleResult?.title, result.article?.title);
-            const plainText = firstText(articleResult?.plain_text, result.article?.plain_text);
+        for (const instruction of instructions ?? []) {
+          for (const entry of (instruction.entries ?? []) as Array<Record<string, unknown>>) {
+            const content = entry.content as Record<string, unknown> | undefined;
+            const itemContent = content?.itemContent as Record<string, unknown> | undefined;
+            const tweetResults = itemContent?.tweet_results as Record<string, unknown> | undefined;
+            const tweetResult = tweetResults?.result as GraphqlTweetResult | undefined;
+            if (tweetResult?.rest_id !== tweetId) continue;
+            const articleResult = tweetResult.article?.article_results?.result;
+            const title = firstText(articleResult?.title, tweetResult.article?.title);
+            const plainText = firstText(articleResult?.plain_text, tweetResult.article?.plain_text);
             return { title, plainText };
           }
         }
-      } catch {
-        return {};
-      }
+        return undefined;
+      };
 
+      const result = await this.graphqlFetchWithRefresh<ArticleData>(
+        {
+          operationName: 'UserArticlesTweets',
+          queryIds: [queryId],
+          variables,
+          features: buildArticleFeatures(),
+          fieldToggles: buildArticleFieldToggles(),
+        },
+        parseArticle,
+      );
+
+      if (result.success) return result.data;
       return {};
     }
 
@@ -182,103 +168,36 @@ export function withTweetDetails<TBase extends AbstractConstructor<TwitterClient
         withArticleRichContentState: true,
       };
 
-      const params = new URLSearchParams({
-        variables: JSON.stringify(variables),
-        features: JSON.stringify(features),
-        fieldToggles: JSON.stringify(fieldToggles),
-      });
+      type TweetDetailData = NonNullable<Awaited<ReturnType<typeof this.fetchTweetDetail>> extends { success: true; data: infer D } ? D : never>;
 
-      try {
-        const parseResponse = async (response: Response) => {
-          if (!response.ok) {
-            const text = await response.text();
-            return { success: false as const, error: `HTTP ${response.status}: ${text.slice(0, 200)}` };
-          }
+      // Custom error checker: allow partial errors when data is present
+      const checkErrors = (json: Record<string, unknown>): string | undefined => {
+        const errors = json.errors as Array<{ message: string; code?: number }> | undefined;
+        if (!errors || errors.length === 0) return undefined;
+        const hasUsableData = Boolean(
+          (json.data as Record<string, unknown>)?.tweetResult ||
+          (json.data as Record<string, unknown>)?.threaded_conversation_with_injections_v2,
+        );
+        if (hasUsableData) return undefined;
+        return errors.map((e) => e.message).join(', ');
+      };
 
-          const data = (await response.json()) as {
-            data?: {
-              tweetResult?: { result?: GraphqlTweetResult };
-              threaded_conversation_with_injections_v2?: {
-                instructions?: Array<{
-                  entries?: Array<{
-                    content?: {
-                      itemContent?: {
-                        tweet_results?: {
-                          result?: GraphqlTweetResult;
-                        };
-                      };
-                    };
-                  }>;
-                }>;
-              };
-            };
-            errors?: Array<{ message: string; code?: number }>;
-          };
+      const parseData = (json: Record<string, unknown>): TweetDetailData | undefined => {
+        const data = json.data as TweetDetailData | undefined;
+        return data ?? undefined;
+      };
 
-          if (data.errors && data.errors.length > 0) {
-            // Twitter API sometimes returns partial errors (e.g., is_translatable failures)
-            // alongside valid tweet/thread data. Only fail if nothing useful is present.
-            const hasUsableData = Boolean(
-              data.data?.tweetResult?.result ||
-                data.data?.threaded_conversation_with_injections_v2?.instructions?.length,
-            );
-            if (!hasUsableData) {
-              return { success: false as const, error: data.errors.map((e) => e.message).join(', ') };
-            }
-          }
+      const queryIds = await this.getTweetDetailQueryIds();
+      const result = await this.graphqlFetchWithRefresh<TweetDetailData>(
+        { operationName: 'TweetDetail', queryIds, variables, features, fieldToggles },
+        parseData,
+        checkErrors,
+      );
 
-          return { success: true as const, data: data.data ?? {} };
-        };
-
-        let lastError: string | undefined;
-        let had404 = false;
-
-        const tryOnce = async () => {
-          const queryIds = await this.getTweetDetailQueryIds();
-
-          for (const queryId of queryIds) {
-            const url = `${TWITTER_API_BASE}/${queryId}/TweetDetail?${params.toString()}`;
-            const response = await this.fetchWithTimeout(url, {
-              method: 'GET',
-              headers: this.getHeaders(),
-            });
-
-            if (response.status !== 404) {
-              return await parseResponse(response);
-            }
-
-            had404 = true;
-
-            const postResponse = await this.fetchWithTimeout(`${TWITTER_API_BASE}/${queryId}/TweetDetail`, {
-              method: 'POST',
-              headers: this.getHeaders(),
-              body: JSON.stringify({ variables, features, queryId }),
-            });
-
-            if (postResponse.status !== 404) {
-              return await parseResponse(postResponse);
-            }
-
-            lastError = 'HTTP 404';
-          }
-
-          return { success: false as const, error: lastError ?? 'Unknown error fetching tweet detail' };
-        };
-
-        const firstAttempt = await tryOnce();
-        if (firstAttempt.success) {
-          return firstAttempt;
-        }
-
-        if (had404) {
-          await this.refreshQueryIds();
-          return await tryOnce();
-        }
-
-        return firstAttempt;
-      } catch (error) {
-        return { success: false, error: error instanceof Error ? error.message : String(error) };
+      if (result.success) {
+        return { success: true, data: result.data };
       }
+      return { success: false, error: result.error };
     }
 
     /**

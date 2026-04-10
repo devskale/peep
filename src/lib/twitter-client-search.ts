@@ -1,5 +1,4 @@
 import type { AbstractConstructor, Mixin, TwitterClientBase } from './twitter-client-base.js';
-import { TWITTER_API_BASE } from './twitter-client-constants.js';
 import { buildSearchFeatures } from './twitter-client-features.js';
 import type { SearchResult, TweetData } from './twitter-client-types.js';
 import { extractCursorFromInstructions, parseTweetsFromInstructions } from './twitter-client-utils.js';
@@ -82,139 +81,68 @@ export function withSearch<TBase extends AbstractConstructor<TwitterClientBase>>
       let pagesFetched = 0;
       const { includeRaw = false, maxPages } = options;
 
-      const fetchPage = async (pageCount: number, pageCursor?: string) => {
-        let lastError: string | undefined;
-        let had404 = false;
+      type SearchData = { tweets: TweetData[]; cursor?: string };
+
+      const fetchPage = async (pageCount: number, pageCursor?: string): Promise<SearchData | string> => {
         const queryIds = await this.getSearchTimelineQueryIds();
 
-        for (const queryId of queryIds) {
-          const variables = {
-            rawQuery: query,
-            count: pageCount,
-            querySource: 'typed_query',
-            product: 'Latest',
-            ...(pageCursor ? { cursor: pageCursor } : {}),
-          };
+        type SearchResponse = {
+          tweets: TweetData[];
+          cursor?: string;
+          had404: boolean;
+        };
 
-          const params = new URLSearchParams({
-            variables: JSON.stringify(variables),
-          });
+        const parseSearchResults = (json: Record<string, unknown>): SearchData | undefined => {
+          const data = json.data as Record<string, unknown> | undefined;
+          const searchByRawQuery = data?.search_by_raw_query as Record<string, unknown> | undefined;
+          const searchTimeline = searchByRawQuery?.search_timeline as Record<string, unknown> | undefined;
+          const timeline = searchTimeline?.timeline as Record<string, unknown> | undefined;
+          const instructions = timeline?.instructions as Array<Record<string, unknown>> | undefined;
+          const pageTweets = parseTweetsFromInstructions(instructions as Parameters<typeof parseTweetsFromInstructions>[0], { quoteDepth: this.quoteDepth, includeRaw });
+          const nextCursor = extractCursorFromInstructions(instructions as Parameters<typeof extractCursorFromInstructions>[0]);
+          return { tweets: pageTweets, cursor: nextCursor };
+        };
 
-          const url = `${TWITTER_API_BASE}/${queryId}/SearchTimeline?${params.toString()}`;
+        // Custom error checker: detect query ID mismatch (should trigger refresh)
+        const checkErrors = (json: Record<string, unknown>): string | undefined => {
+          const errors = json.errors as Array<{ message?: string; extensions?: { code?: string } }> | undefined;
+          if (!errors || errors.length === 0) return undefined;
+          const shouldRefresh = errors.some(
+            (e) => e?.extensions?.code === 'GRAPHQL_VALIDATION_FAILED',
+          );
+          if (shouldRefresh) return '__query_id_mismatch__';
+          return errors.map((e) => e.message ?? 'Unknown error').join(', ');
+        };
 
-          try {
-            const response = await this.fetchWithTimeout(url, {
-              method: 'POST',
-              headers: this.getHeaders(),
-              body: JSON.stringify({ features, queryId }),
-            });
+        const result = await this.graphqlFetchWithRefresh<SearchData>(
+          {
+            operationName: 'SearchTimeline',
+            queryIds,
+            variables: {
+              rawQuery: query,
+              count: pageCount,
+              querySource: 'typed_query',
+              product: 'Latest',
+              ...(pageCursor ? { cursor: pageCursor } : {}),
+            },
+            features,
+            method: 'POST',
+            variablesInUrl: true,
+          },
+          parseSearchResults,
+          checkErrors,
+        );
 
-            if (response.status === 404) {
-              had404 = true;
-              lastError = `HTTP ${response.status}`;
-              continue;
-            }
-
-            if (!response.ok) {
-              const text = await response.text();
-              const shouldRefreshQueryIds =
-                (response.status === 400 || response.status === 422) && isQueryIdMismatch(text);
-              return {
-                success: false as const,
-                error: `HTTP ${response.status}: ${text.slice(0, 200)}`,
-                had404: had404 || shouldRefreshQueryIds,
-              };
-            }
-
-            const data = (await response.json()) as {
-              data?: {
-                search_by_raw_query?: {
-                  search_timeline?: {
-                    timeline?: {
-                      instructions?: Array<{
-                        entries?: Array<{
-                          content?: {
-                            itemContent?: {
-                              tweet_results?: {
-                                result?: {
-                                  rest_id?: string;
-                                  legacy?: {
-                                    full_text?: string;
-                                    created_at?: string;
-                                    reply_count?: number;
-                                    retweet_count?: number;
-                                    favorite_count?: number;
-                                    in_reply_to_status_id_str?: string;
-                                  };
-                                  core?: {
-                                    user_results?: {
-                                      result?: {
-                                        legacy?: {
-                                          screen_name?: string;
-                                          name?: string;
-                                        };
-                                      };
-                                    };
-                                  };
-                                };
-                              };
-                            };
-                          };
-                        }>;
-                      }>;
-                    };
-                  };
-                };
-              };
-              errors?: Array<{ message: string; extensions?: { code?: string } }>;
-            };
-
-            if (data.errors && data.errors.length > 0) {
-              const shouldRefreshQueryIds = data.errors.some(
-                (error) => error?.extensions?.code === 'GRAPHQL_VALIDATION_FAILED',
-              );
-              return {
-                success: false as const,
-                error: data.errors.map((e) => e.message).join(', '),
-                had404: had404 || shouldRefreshQueryIds,
-              };
-            }
-
-            const instructions = data.data?.search_by_raw_query?.search_timeline?.timeline?.instructions;
-            const pageTweets = parseTweetsFromInstructions(instructions, { quoteDepth: this.quoteDepth, includeRaw });
-            const nextCursor = extractCursorFromInstructions(instructions);
-
-            return { success: true as const, tweets: pageTweets, cursor: nextCursor, had404 };
-          } catch (error) {
-            lastError = error instanceof Error ? error.message : String(error);
-          }
-        }
-
-        return { success: false as const, error: lastError ?? 'Unknown error fetching search results', had404 };
-      };
-
-      const fetchWithRefresh = async (pageCount: number, pageCursor?: string) => {
-        const firstAttempt = await fetchPage(pageCount, pageCursor);
-        if (firstAttempt.success) {
-          return firstAttempt;
-        }
-        if (firstAttempt.had404) {
-          await this.refreshQueryIds();
-          const secondAttempt = await fetchPage(pageCount, pageCursor);
-          if (secondAttempt.success) {
-            return secondAttempt;
-          }
-          return { success: false as const, error: secondAttempt.error };
-        }
-        return { success: false as const, error: firstAttempt.error };
+        if (result.success) return result.data;
+        return result.error;
       };
 
       const unlimited = limit === Number.POSITIVE_INFINITY;
       while (unlimited || tweets.length < limit) {
         const pageCount = unlimited ? pageSize : Math.min(pageSize, limit - tweets.length);
-        const page = await fetchWithRefresh(pageCount, cursor);
-        if (!page.success) {
-          return { success: false, error: page.error };
+        const page = await fetchPage(pageCount, cursor);
+        if (typeof page === 'string') {
+          return { success: false, error: page };
         }
         pagesFetched += 1;
 

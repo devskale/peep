@@ -1,6 +1,5 @@
 import { normalizeHandle } from './normalize-handle.js';
 import type { AbstractConstructor, Mixin, TwitterClientBase } from './twitter-client-base.js';
-import { TWITTER_API_BASE } from './twitter-client-constants.js';
 import type { AboutAccountResult } from './twitter-client-types.js';
 
 /** Result of username to userId lookup */
@@ -27,7 +26,6 @@ export function withUserLookup<TBase extends AbstractConstructor<TwitterClientBa
     }
 
     private async getUserByScreenNameGraphQL(screenName: string): Promise<UserLookupResult> {
-      // UserByScreenName query IDs observed from web client
       const queryIds = ['xc8f1g7BYqr6VTzTbvNlGw', 'qW5u-DAuXpMEG0zA1F7UGQ', 'sLVLhk0bGj3MVFEKTdax1w'];
 
       const variables = {
@@ -56,85 +54,61 @@ export function withUserLookup<TBase extends AbstractConstructor<TwitterClientBa
         withAuxiliaryUserLabels: false,
       };
 
-      const params = new URLSearchParams({
-        variables: JSON.stringify(variables),
-        features: JSON.stringify(features),
-        fieldToggles: JSON.stringify(fieldToggles),
-      });
+      type UserData = { userId: string; username: string; name: string };
 
-      let lastError: string | undefined;
+      const parseUser = (json: Record<string, unknown>): UserData | undefined => {
+        const data = json.data as Record<string, unknown> | undefined;
+        const user = data?.user as Record<string, unknown> | undefined;
+        const result = user?.result as Record<string, unknown> | undefined;
 
-      for (const queryId of queryIds) {
-        const url = `${TWITTER_API_BASE}/${queryId}/UserByScreenName?${params.toString()}`;
-
-        try {
-          const response = await this.fetchWithTimeout(url, {
-            method: 'GET',
-            headers: this.getHeaders(),
-          });
-
-          if (!response.ok) {
-            const text = await response.text();
-            if (response.status === 404) {
-              // Try next query ID
-              lastError = `HTTP ${response.status}`;
-              continue;
-            }
-            lastError = `HTTP ${response.status}: ${text.slice(0, 200)}`;
-            continue;
-          }
-
-          const data = (await response.json()) as {
-            data?: {
-              user?: {
-                result?: {
-                  __typename?: string;
-                  rest_id?: string;
-                  legacy?: {
-                    screen_name?: string;
-                    name?: string;
-                  };
-                  core?: {
-                    screen_name?: string;
-                    name?: string;
-                  };
-                };
-              };
-            };
-            errors?: Array<{ message: string }>;
-          };
-
-          // Check for user not found
-          if (data.data?.user?.result?.__typename === 'UserUnavailable') {
-            return { success: false, error: `User @${screenName} not found or unavailable` };
-          }
-
-          const userResult = data.data?.user?.result;
-          const userId = userResult?.rest_id;
-          const username = userResult?.legacy?.screen_name ?? userResult?.core?.screen_name;
-          const name = userResult?.legacy?.name ?? userResult?.core?.name;
-
-          if (userId && username) {
-            return {
-              success: true,
-              userId,
-              username,
-              name,
-            };
-          }
-
-          if (data.errors && data.errors.length > 0) {
-            lastError = data.errors.map((e) => e.message).join(', ');
-            continue;
-          }
-
-          lastError = 'Could not parse user data from response';
-        } catch (error) {
-          lastError = error instanceof Error ? error.message : String(error);
+        if (result?.__typename === 'UserUnavailable') {
+          // Signal via a special marker that the user is gone — handled via undefined + special error below
+          return undefined;
         }
+
+        const restId = typeof result?.rest_id === 'string' ? result.rest_id : undefined;
+        const legacy = result?.legacy as Record<string, unknown> | undefined;
+        const core = result?.core as Record<string, unknown> | undefined;
+        const username = typeof legacy?.screen_name === 'string' ? legacy.screen_name : typeof core?.screen_name === 'string' ? core.screen_name : undefined;
+        const name = typeof legacy?.name === 'string' ? legacy.name : typeof core?.name === 'string' ? core.name : username;
+
+        if (restId && username) {
+          return { userId: restId, username, name: name || username };
+        }
+        return undefined;
+      };
+
+      // Custom error checker: detect UserUnavailable before falling through to default errors
+      const checkErrors = (json: Record<string, unknown>): string | undefined => {
+        const data = json.data as Record<string, unknown> | undefined;
+        const user = data?.user as Record<string, unknown> | undefined;
+        const result = user?.result as Record<string, unknown> | undefined;
+        if (result?.__typename === 'UserUnavailable') {
+          return `__user_unavailable__`;
+        }
+        // Fall back to default GraphQL error checking
+        const errors = json.errors as Array<{ message: string }> | undefined;
+        if (errors && errors.length > 0) {
+          return errors.map((e) => e.message).join(', ');
+        }
+        return undefined;
+      };
+
+      const result = await this.graphqlFetchWithRefresh<UserData>(
+        { operationName: 'UserByScreenName', queryIds, variables, features, fieldToggles },
+        parseUser,
+        checkErrors,
+      );
+
+      if (result.success) {
+        return { success: true, userId: result.data.userId, username: result.data.username, name: result.data.name };
       }
 
-      return { success: false, error: lastError ?? 'Unknown error looking up user' };
+      if (result.error === '__user_unavailable__') {
+        return { success: false, error: `User @${screenName} not found or unavailable` };
+      }
+
+      return { success: false, error: result.error };
     }
 
     /**
@@ -223,93 +197,39 @@ export function withUserLookup<TBase extends AbstractConstructor<TwitterClientBa
         return { success: false, error: `Invalid username: ${username}` };
       }
 
-      const variables = {
-        screenName: cleanUsername,
+      const queryIds = await this.getAboutAccountQueryIds();
+      const variables = { screenName: cleanUsername };
+
+      type AboutData = {
+        accountBasedIn?: string;
+        source?: string;
+        createdCountryAccurate?: boolean;
+        locationAccurate?: boolean;
+        learnMoreUrl?: string;
       };
 
-      const params = new URLSearchParams({
-        variables: JSON.stringify(variables),
-      });
-
-      const tryOnce = async () => {
-        let lastError: string | undefined;
-        let had404 = false;
-        const queryIds = await this.getAboutAccountQueryIds();
-
-        for (const queryId of queryIds) {
-          const url = `${TWITTER_API_BASE}/${queryId}/AboutAccountQuery?${params.toString()}`;
-
-          try {
-            const response = await this.fetchWithTimeout(url, {
-              method: 'GET',
-              headers: this.getHeaders(),
-            });
-
-            if (!response.ok) {
-              const text = await response.text();
-              if (response.status === 404) {
-                had404 = true;
-                lastError = `HTTP ${response.status}`;
-                continue;
-              }
-              lastError = `HTTP ${response.status}: ${text.slice(0, 200)}`;
-              continue;
-            }
-
-            const data = (await response.json()) as {
-              data?: {
-                user_result_by_screen_name?: {
-                  result?: {
-                    about_profile?: {
-                      account_based_in?: string;
-                      source?: string;
-                      created_country_accurate?: boolean;
-                      location_accurate?: boolean;
-                      learn_more_url?: string;
-                    };
-                  };
-                };
-              };
-              errors?: Array<{ message: string }>;
-            };
-
-            if (data.errors && data.errors.length > 0) {
-              lastError = data.errors.map((e) => e.message).join(', ');
-              continue;
-            }
-
-            const aboutProfile = data.data?.user_result_by_screen_name?.result?.about_profile;
-            if (!aboutProfile) {
-              lastError = 'Missing about_profile in response';
-              continue;
-            }
-
-            return {
-              success: true as const,
-              aboutProfile: {
-                accountBasedIn: aboutProfile.account_based_in,
-                source: aboutProfile.source,
-                createdCountryAccurate: aboutProfile.created_country_accurate,
-                locationAccurate: aboutProfile.location_accurate,
-                learnMoreUrl: aboutProfile.learn_more_url,
-              },
-              had404,
-            };
-          } catch (error) {
-            lastError = error instanceof Error ? error.message : String(error);
-          }
-        }
-
+      const parseAbout = (json: Record<string, unknown>): AboutData | undefined => {
+        const data = json.data as Record<string, unknown> | undefined;
+        const userResult = data?.user_result_by_screen_name as Record<string, unknown> | undefined;
+        const result = userResult?.result as Record<string, unknown> | undefined;
+        const about = result?.about_profile as Record<string, unknown> | undefined;
+        if (!about) throw new Error('Missing about_profile');
         return {
-          success: false as const,
-          error: lastError ?? 'Unknown error fetching account details',
-          had404,
+          accountBasedIn: typeof about.account_based_in === 'string' ? about.account_based_in : undefined,
+          source: typeof about.source === 'string' ? about.source : undefined,
+          createdCountryAccurate: typeof about.created_country_accurate === 'boolean' ? about.created_country_accurate : undefined,
+          locationAccurate: typeof about.location_accurate === 'boolean' ? about.location_accurate : undefined,
+          learnMoreUrl: typeof about.learn_more_url === 'string' ? about.learn_more_url : undefined,
         };
       };
 
-      const { result } = await this.withRefreshedQueryIdsOn404(tryOnce);
+      const result = await this.graphqlFetchWithRefresh<AboutData>(
+        { operationName: 'AboutAccountQuery', queryIds, variables },
+        parseAbout,
+      );
+
       if (result.success) {
-        return { success: true, aboutProfile: result.aboutProfile };
+        return { success: true, aboutProfile: result.data };
       }
       return { success: false, error: result.error };
     }

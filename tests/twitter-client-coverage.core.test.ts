@@ -303,7 +303,7 @@ describe('TwitterClient core coverage', () => {
     });
 
     it('returns an error when fetch throws', async () => {
-      const mockFetch = vi.fn().mockRejectedValueOnce(new Error('boom'));
+      const mockFetch = vi.fn().mockRejectedValue(new Error('boom'));
       global.fetch = mockFetch as unknown as typeof fetch;
 
       const client = new TwitterClient({ cookies: validCookies });

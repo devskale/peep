@@ -1,5 +1,4 @@
 import type { AbstractConstructor, Mixin, TwitterClientBase } from './twitter-client-base.js';
-import { TWITTER_API_BASE } from './twitter-client-constants.js';
 import type { FollowMutationResult } from './twitter-client-types.js';
 
 export interface TwitterClientFollowMethods {
@@ -135,90 +134,35 @@ export function withFollow<TBase extends AbstractConstructor<TwitterClientBase>>
 
     private async followViaGraphQL(userId: string, follow: boolean): Promise<FollowMutationResult> {
       const operationName = follow ? 'CreateFriendship' : 'DestroyFriendship';
-      const variables = {
-        user_id: userId,
+      const queryIds = await this.getFollowQueryIds(follow);
+
+      type FollowData = { userId?: string; username?: string };
+
+      const parseResult = (json: Record<string, unknown>): FollowData | undefined => {
+        const data = json.data as Record<string, unknown> | undefined;
+        const user = data?.user as Record<string, unknown> | undefined;
+        const result = user?.result as Record<string, unknown> | undefined;
+        if (!result) return undefined;
+        const restId = typeof result.rest_id === 'string' ? result.rest_id : undefined;
+        const legacy = result.legacy as Record<string, unknown> | undefined;
+        const screenName = typeof legacy?.screen_name === 'string' ? legacy.screen_name : undefined;
+        return { userId: restId, username: screenName };
       };
 
-      const tryOnce = async () => {
-        let lastError: string | undefined;
-        let had404 = false;
-        const queryIds = await this.getFollowQueryIds(follow);
+      const result = await this.graphqlFetchWithRefresh<FollowData>(
+        {
+          operationName,
+          queryIds,
+          variables: { user_id: userId },
+          method: 'POST',
+        },
+        parseResult,
+      );
 
-        for (const queryId of queryIds) {
-          const url = `${TWITTER_API_BASE}/${queryId}/${operationName}`;
-
-          try {
-            const response = await this.fetchWithTimeout(url, {
-              method: 'POST',
-              headers: this.getHeaders(),
-              body: JSON.stringify({ variables, queryId }),
-            });
-
-            if (response.status === 404) {
-              had404 = true;
-              lastError = 'HTTP 404';
-              continue;
-            }
-
-            if (!response.ok) {
-              const text = await response.text();
-              lastError = `HTTP ${response.status}: ${text.slice(0, 200)}`;
-              continue;
-            }
-
-            const data = (await response.json()) as {
-              data?: {
-                user?: {
-                  result?: {
-                    rest_id?: string;
-                    legacy?: {
-                      screen_name?: string;
-                    };
-                  };
-                };
-              };
-              errors?: Array<{ message: string }>;
-            };
-
-            if (data.errors && data.errors.length > 0) {
-              lastError = data.errors.map((e) => e.message).join(', ');
-              continue;
-            }
-
-            const result = data.data?.user?.result;
-            return {
-              success: true as const,
-              userId: result?.rest_id,
-              username: result?.legacy?.screen_name,
-              had404,
-            };
-          } catch (error) {
-            lastError = error instanceof Error ? error.message : String(error);
-          }
-        }
-
-        return {
-          success: false as const,
-          error: lastError ?? `Unknown error during ${operationName}`,
-          had404,
-        };
-      };
-
-      const firstAttempt = await tryOnce();
-      if (firstAttempt.success) {
-        return { success: true, userId: firstAttempt.userId, username: firstAttempt.username };
+      if (result.success) {
+        return { success: true, userId: result.data.userId, username: result.data.username };
       }
-
-      if (firstAttempt.had404) {
-        await this.refreshQueryIds();
-        const secondAttempt = await tryOnce();
-        if (secondAttempt.success) {
-          return { success: true, userId: secondAttempt.userId, username: secondAttempt.username };
-        }
-        return { success: false, error: secondAttempt.error };
-      }
-
-      return { success: false, error: firstAttempt.error };
+      return { success: false, error: result.error };
     }
 
     private async getFollowQueryIds(follow: boolean): Promise<string[]> {

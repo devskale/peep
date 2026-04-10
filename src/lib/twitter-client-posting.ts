@@ -1,5 +1,5 @@
 import type { AbstractConstructor, Mixin, TwitterClientBase } from './twitter-client-base.js';
-import { TWITTER_API_BASE, TWITTER_GRAPHQL_POST_URL, TWITTER_STATUS_UPDATE_URL } from './twitter-client-constants.js';
+import { TWITTER_STATUS_UPDATE_URL } from './twitter-client-constants.js';
 import { buildTweetCreateFeatures } from './twitter-client-features.js';
 import type { CreateTweetResponse, TweetResult } from './twitter-client-types.js';
 
@@ -31,9 +31,7 @@ export function withPosting<TBase extends AbstractConstructor<TwitterClientBase>
         semantic_annotation_ids: [],
       };
 
-      const features = buildTweetCreateFeatures();
-
-      return this.createTweet(variables, features);
+      return this.createTweet(variables);
     }
 
     /**
@@ -54,120 +52,59 @@ export function withPosting<TBase extends AbstractConstructor<TwitterClientBase>
         semantic_annotation_ids: [],
       };
 
+      return this.createTweet(variables);
+    }
+
+    private async createTweet(variables: Record<string, unknown>): Promise<TweetResult> {
+      await this.ensureClientUserId();
+      const queryIds = await this.getQueryId('CreateTweet');
       const features = buildTweetCreateFeatures();
 
-      return this.createTweet(variables, features);
-    }
+      const parseTweetId = (json: Record<string, unknown>): string | undefined => {
+        const data = json.data as Record<string, unknown> | undefined;
+        const createTweet = data?.create_tweet as Record<string, unknown> | undefined;
+        const tweetResults = createTweet?.tweet_results as Record<string, unknown> | undefined;
+        const result = tweetResults?.result as Record<string, unknown> | undefined;
+        if (typeof result?.rest_id === 'string') return result.rest_id;
+        // If data exists but has no rest_id, throw a specific error
+        if (data?.create_tweet) throw new Error('Tweet created but no ID returned');
+        return undefined;
+      };
 
-    private async createTweet(
-      variables: Record<string, unknown>,
-      features: Record<string, boolean>,
-    ): Promise<TweetResult> {
-      await this.ensureClientUserId();
-      let queryId = await this.getQueryId('CreateTweet');
-      let urlWithOperation = `${TWITTER_API_BASE}/${queryId}/CreateTweet`;
+      const checkErrors = (json: Record<string, unknown>): string | undefined => {
+        const errors = json.errors as Array<{ message: string; code?: number }> | undefined;
+        if (!errors || errors.length === 0) return undefined;
+        return errors.map((e) => (typeof e.code === 'number' ? `${e.message} (${e.code})` : e.message)).join(', ');
+      };
 
-      const buildBody = () => JSON.stringify({ variables, features, queryId });
-      let body = buildBody();
-
-      try {
-        const headers = { ...this.getHeaders(), referer: 'https://x.com/compose/post' };
-        let response = await this.fetchWithTimeout(urlWithOperation, {
+      const result = await this.graphqlMutationWithRetry<string>(
+        {
+          operationName: 'CreateTweet',
+          queryIds: [queryIds],
+          variables,
+          features,
           method: 'POST',
-          headers,
-          body,
-        });
+          extraHeaders: { referer: 'https://x.com/compose/post' },
+        },
+        parseTweetId,
+        checkErrors,
+      );
 
-        // Twitter increasingly prefers POST to /i/api/graphql with queryId in the payload.
-        // If the operation URL 404s, retry the generic endpoint.
-        if (response.status === 404) {
-          await this.refreshQueryIds();
-          queryId = await this.getQueryId('CreateTweet');
-          urlWithOperation = `${TWITTER_API_BASE}/${queryId}/CreateTweet`;
-          body = buildBody();
-
-          response = await this.fetchWithTimeout(urlWithOperation, {
-            method: 'POST',
-            headers: { ...this.getHeaders(), referer: 'https://x.com/compose/post' },
-            body,
-          });
-
-          if (response.status === 404) {
-            const retry = await this.fetchWithTimeout(TWITTER_GRAPHQL_POST_URL, {
-              method: 'POST',
-              headers: { ...this.getHeaders(), referer: 'https://x.com/compose/post' },
-              body,
-            });
-
-            if (!retry.ok) {
-              const text = await retry.text();
-              return { success: false, error: `HTTP ${retry.status}: ${text.slice(0, 200)}` };
-            }
-
-            const data = (await retry.json()) as CreateTweetResponse;
-
-            if (data.errors && data.errors.length > 0) {
-              const fallback = await this.tryStatusUpdateFallback(data.errors, variables);
-              if (fallback) {
-                return fallback;
-              }
-              return { success: false, error: this.formatErrors(data.errors) };
-            }
-
-            const tweetId = data.data?.create_tweet?.tweet_results?.result?.rest_id;
-            if (tweetId) {
-              return { success: true, tweetId };
-            }
-
-            return { success: false, error: 'Tweet created but no ID returned' };
-          }
-        }
-
-        if (!response.ok) {
-          const text = await response.text();
-          return {
-            success: false,
-            error: `HTTP ${response.status}: ${text.slice(0, 200)}`,
-          };
-        }
-
-        const data = (await response.json()) as CreateTweetResponse;
-
-        if (data.errors && data.errors.length > 0) {
-          const fallback = await this.tryStatusUpdateFallback(data.errors, variables);
-          if (fallback) {
-            return fallback;
-          }
-          return {
-            success: false,
-            error: this.formatErrors(data.errors),
-          };
-        }
-
-        const tweetId = data.data?.create_tweet?.tweet_results?.result?.rest_id;
-        if (tweetId) {
-          return {
-            success: true,
-            tweetId,
-          };
-        }
-
-        return {
-          success: false,
-          error: 'Tweet created but no ID returned',
-        };
-      } catch (error) {
-        return {
-          success: false,
-          error: error instanceof Error ? error.message : String(error),
-        };
+      if (result.success) {
+        return { success: true, tweetId: result.data };
       }
-    }
 
-    private formatErrors(errors: Array<{ message: string; code?: number }>): string {
-      return errors
-        .map((error) => (typeof error.code === 'number' ? `${error.message} (${error.code})` : error.message))
-        .join(', ');
+      // Error 226 = "automated request" → try legacy status/update fallback
+      if (result.error.includes('(226)')) {
+        const fallback = await this.tryStatusUpdateFallback(variables);
+        if (fallback) {
+          if (fallback.success) return fallback;
+          // Surface fallback error alongside original 226 error
+          return { success: false, error: `${result.error}, fallback: ${fallback.error}` };
+        }
+      }
+
+      return { success: false, error: result.error };
     }
 
     private statusUpdateInputFromCreateTweetVariables(variables: Record<string, unknown>): {
@@ -259,27 +196,19 @@ export function withPosting<TBase extends AbstractConstructor<TwitterClientBase>
       }
     }
 
-    private async tryStatusUpdateFallback(
-      errors: Array<{ message: string; code?: number }>,
-      variables: Record<string, unknown>,
-    ): Promise<TweetResult | null> {
-      if (!errors.some((error) => error.code === 226)) {
-        return null;
-      }
+    private async tryStatusUpdateFallback(variables: Record<string, unknown>): Promise<TweetResult | null> {
       const input = this.statusUpdateInputFromCreateTweetVariables(variables);
       if (!input) {
         return null;
       }
 
-      const fallback = await this.postStatusUpdate(input);
-      if (fallback.success) {
-        return fallback;
-      }
+      return this.postStatusUpdate(input);
+    }
 
-      return {
-        success: false,
-        error: `${this.formatErrors(errors)} | fallback: ${fallback.error ?? 'Unknown error'}`,
-      };
+    private formatErrors(errors: Array<{ message: string; code?: number }>): string {
+      return errors
+        .map((error) => (typeof error.code === 'number' ? `${error.message} (${error.code})` : error.message))
+        .join(', ');
     }
   }
 

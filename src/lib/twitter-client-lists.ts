@@ -1,8 +1,4 @@
-// ABOUTME: Mixin for Twitter Lists GraphQL operations.
-// ABOUTME: Provides methods to fetch user's owned lists, memberships, and list timelines.
-
 import type { AbstractConstructor, Mixin, TwitterClientBase } from './twitter-client-base.js';
-import { TWITTER_API_BASE } from './twitter-client-constants.js';
 import { buildListsFeatures } from './twitter-client-features.js';
 import type { TimelineFetchOptions, TimelinePaginationOptions } from './twitter-client-timelines.js';
 import type { GraphqlTweetResult, ListsResult, SearchResult, TweetData, TwitterList } from './twitter-client-types.js';
@@ -127,99 +123,38 @@ export function withLists<TBase extends AbstractConstructor<TwitterClientBase>>(
         return { success: false, error: userResult.error ?? 'Could not determine current user' };
       }
 
-      const variables = {
-        userId: userResult.user.id,
-        count,
-        isListMembershipShown: true,
-        isListMemberTargetUserId: userResult.user.id,
+      const queryIds = await this.getListOwnershipsQueryIds();
+
+      const parseLists = (json: Record<string, unknown>): TwitterList[] | undefined => {
+        const data = json.data as Record<string, unknown> | undefined;
+        const user = data?.user as Record<string, unknown> | undefined;
+        const result = user?.result as Record<string, unknown> | undefined;
+        const timeline = result?.timeline as Record<string, unknown> | undefined;
+        const tl = timeline?.timeline as Record<string, unknown> | undefined;
+        const instructions = tl?.instructions as Array<Record<string, unknown>> | undefined;
+        const lists = parseListsFromInstructions(instructions as Parameters<typeof parseListsFromInstructions>[0]);
+        return lists; // empty array is a valid result
       };
 
-      const features = buildListsFeatures();
+      const result = await this.graphqlFetchWithRefresh<TwitterList[]>(
+        {
+          operationName: 'ListOwnerships',
+          queryIds,
+          variables: {
+            userId: userResult.user.id,
+            count,
+            isListMembershipShown: true,
+            isListMemberTargetUserId: userResult.user.id,
+          },
+          features: buildListsFeatures(),
+        },
+        parseLists,
+      );
 
-      const params = new URLSearchParams({
-        variables: JSON.stringify(variables),
-        features: JSON.stringify(features),
-      });
-
-      const tryOnce = async () => {
-        let lastError: string | undefined;
-        let had404 = false;
-        const queryIds = await this.getListOwnershipsQueryIds();
-
-        for (const queryId of queryIds) {
-          const url = `${TWITTER_API_BASE}/${queryId}/ListOwnerships?${params.toString()}`;
-
-          try {
-            const response = await this.fetchWithTimeout(url, {
-              method: 'GET',
-              headers: this.getHeaders(),
-            });
-
-            if (response.status === 404) {
-              had404 = true;
-              lastError = `HTTP ${response.status}`;
-              continue;
-            }
-
-            if (!response.ok) {
-              const text = await response.text();
-              return { success: false as const, error: `HTTP ${response.status}: ${text.slice(0, 200)}`, had404 };
-            }
-
-            const data = (await response.json()) as {
-              data?: {
-                user?: {
-                  result?: {
-                    timeline?: {
-                      timeline?: {
-                        instructions?: Array<{
-                          entries?: Array<{
-                            content?: {
-                              itemContent?: {
-                                list?: GraphqlListResult;
-                              };
-                            };
-                          }>;
-                        }>;
-                      };
-                    };
-                  };
-                };
-              };
-              errors?: Array<{ message: string }>;
-            };
-
-            if (data.errors && data.errors.length > 0) {
-              return { success: false as const, error: data.errors.map((e) => e.message).join(', '), had404 };
-            }
-
-            const instructions = data.data?.user?.result?.timeline?.timeline?.instructions;
-            const lists = parseListsFromInstructions(instructions);
-
-            return { success: true as const, lists, had404 };
-          } catch (error) {
-            lastError = error instanceof Error ? error.message : String(error);
-          }
-        }
-
-        return { success: false as const, error: lastError ?? 'Unknown error fetching owned lists', had404 };
-      };
-
-      const firstAttempt = await tryOnce();
-      if (firstAttempt.success) {
-        return { success: true, lists: firstAttempt.lists };
+      if (result.success) {
+        return { success: true, lists: result.data };
       }
-
-      if (firstAttempt.had404) {
-        await this.refreshQueryIds();
-        const secondAttempt = await tryOnce();
-        if (secondAttempt.success) {
-          return { success: true, lists: secondAttempt.lists };
-        }
-        return { success: false, error: secondAttempt.error };
-      }
-
-      return { success: false, error: firstAttempt.error };
+      return { success: false, error: result.error };
     }
 
     /**
@@ -231,99 +166,38 @@ export function withLists<TBase extends AbstractConstructor<TwitterClientBase>>(
         return { success: false, error: userResult.error ?? 'Could not determine current user' };
       }
 
-      const variables = {
-        userId: userResult.user.id,
-        count,
-        isListMembershipShown: true,
-        isListMemberTargetUserId: userResult.user.id,
+      const queryIds = await this.getListMembershipsQueryIds();
+
+      const parseLists = (json: Record<string, unknown>): TwitterList[] | undefined => {
+        const data = json.data as Record<string, unknown> | undefined;
+        const user = data?.user as Record<string, unknown> | undefined;
+        const result = user?.result as Record<string, unknown> | undefined;
+        const timeline = result?.timeline as Record<string, unknown> | undefined;
+        const tl = timeline?.timeline as Record<string, unknown> | undefined;
+        const instructions = tl?.instructions as Array<Record<string, unknown>> | undefined;
+        const lists = parseListsFromInstructions(instructions as Parameters<typeof parseListsFromInstructions>[0]);
+        return lists; // empty array is a valid result
       };
 
-      const features = buildListsFeatures();
+      const result = await this.graphqlFetchWithRefresh<TwitterList[]>(
+        {
+          operationName: 'ListMemberships',
+          queryIds,
+          variables: {
+            userId: userResult.user.id,
+            count,
+            isListMembershipShown: true,
+            isListMemberTargetUserId: userResult.user.id,
+          },
+          features: buildListsFeatures(),
+        },
+        parseLists,
+      );
 
-      const params = new URLSearchParams({
-        variables: JSON.stringify(variables),
-        features: JSON.stringify(features),
-      });
-
-      const tryOnce = async () => {
-        let lastError: string | undefined;
-        let had404 = false;
-        const queryIds = await this.getListMembershipsQueryIds();
-
-        for (const queryId of queryIds) {
-          const url = `${TWITTER_API_BASE}/${queryId}/ListMemberships?${params.toString()}`;
-
-          try {
-            const response = await this.fetchWithTimeout(url, {
-              method: 'GET',
-              headers: this.getHeaders(),
-            });
-
-            if (response.status === 404) {
-              had404 = true;
-              lastError = `HTTP ${response.status}`;
-              continue;
-            }
-
-            if (!response.ok) {
-              const text = await response.text();
-              return { success: false as const, error: `HTTP ${response.status}: ${text.slice(0, 200)}`, had404 };
-            }
-
-            const data = (await response.json()) as {
-              data?: {
-                user?: {
-                  result?: {
-                    timeline?: {
-                      timeline?: {
-                        instructions?: Array<{
-                          entries?: Array<{
-                            content?: {
-                              itemContent?: {
-                                list?: GraphqlListResult;
-                              };
-                            };
-                          }>;
-                        }>;
-                      };
-                    };
-                  };
-                };
-              };
-              errors?: Array<{ message: string }>;
-            };
-
-            if (data.errors && data.errors.length > 0) {
-              return { success: false as const, error: data.errors.map((e) => e.message).join(', '), had404 };
-            }
-
-            const instructions = data.data?.user?.result?.timeline?.timeline?.instructions;
-            const lists = parseListsFromInstructions(instructions);
-
-            return { success: true as const, lists, had404 };
-          } catch (error) {
-            lastError = error instanceof Error ? error.message : String(error);
-          }
-        }
-
-        return { success: false as const, error: lastError ?? 'Unknown error fetching list memberships', had404 };
-      };
-
-      const firstAttempt = await tryOnce();
-      if (firstAttempt.success) {
-        return { success: true, lists: firstAttempt.lists };
+      if (result.success) {
+        return { success: true, lists: result.data };
       }
-
-      if (firstAttempt.had404) {
-        await this.refreshQueryIds();
-        const secondAttempt = await tryOnce();
-        if (secondAttempt.success) {
-          return { success: true, lists: secondAttempt.lists };
-        }
-        return { success: false, error: secondAttempt.error };
-      }
-
-      return { success: false, error: firstAttempt.error };
+      return { success: false, error: result.error };
     }
 
     /**
@@ -357,105 +231,47 @@ export function withLists<TBase extends AbstractConstructor<TwitterClientBase>>(
       let pagesFetched = 0;
       const { includeRaw = false, maxPages } = options;
 
-      const fetchPage = async (pageCount: number, pageCursor?: string) => {
-        let lastError: string | undefined;
-        let had404 = false;
+      type TimelineData = { tweets: TweetData[]; cursor?: string };
+
+      const fetchPage = async (pageCount: number, pageCursor?: string): Promise<TimelineData | string> => {
         const queryIds = await this.getListTimelineQueryIds();
 
-        const variables = {
-          listId,
-          count: pageCount,
-          ...(pageCursor ? { cursor: pageCursor } : {}),
+        const parseTimeline = (json: Record<string, unknown>): TimelineData | undefined => {
+          const data = json.data as Record<string, unknown> | undefined;
+          const list = data?.list as Record<string, unknown> | undefined;
+          const tweetsTimeline = list?.tweets_timeline as Record<string, unknown> | undefined;
+          const timeline = tweetsTimeline?.timeline as Record<string, unknown> | undefined;
+          const instructions = timeline?.instructions as Array<Record<string, unknown>> | undefined;
+          const pageTweets = parseTweetsFromInstructions(instructions as Parameters<typeof parseTweetsFromInstructions>[0], { quoteDepth: this.quoteDepth, includeRaw });
+          const nextCursor = extractCursorFromInstructions(instructions as Parameters<typeof extractCursorFromInstructions>[0]);
+          return { tweets: pageTweets, cursor: nextCursor };
         };
 
-        const params = new URLSearchParams({
-          variables: JSON.stringify(variables),
-          features: JSON.stringify(features),
-        });
+        const result = await this.graphqlFetchWithRefresh<TimelineData>(
+          {
+            operationName: 'ListLatestTweetsTimeline',
+            queryIds,
+            variables: { listId, count: pageCount, ...(pageCursor ? { cursor: pageCursor } : {}) },
+            features,
+          },
+          parseTimeline,
+        );
 
-        for (const queryId of queryIds) {
-          const url = `${TWITTER_API_BASE}/${queryId}/ListLatestTweetsTimeline?${params.toString()}`;
-
-          try {
-            const response = await this.fetchWithTimeout(url, {
-              method: 'GET',
-              headers: this.getHeaders(),
-            });
-
-            if (response.status === 404) {
-              had404 = true;
-              lastError = `HTTP ${response.status}`;
-              continue;
-            }
-
-            if (!response.ok) {
-              const text = await response.text();
-              return { success: false as const, error: `HTTP ${response.status}: ${text.slice(0, 200)}`, had404 };
-            }
-
-            const data = (await response.json()) as {
-              data?: {
-                list?: {
-                  tweets_timeline?: {
-                    timeline?: {
-                      instructions?: Array<{
-                        entries?: Array<{
-                          content?: {
-                            itemContent?: {
-                              tweet_results?: {
-                                result?: GraphqlTweetResult;
-                              };
-                            };
-                          };
-                        }>;
-                      }>;
-                    };
-                  };
-                };
-              };
-              errors?: Array<{ message: string }>;
-            };
-
-            if (data.errors && data.errors.length > 0) {
-              return { success: false as const, error: data.errors.map((e) => e.message).join(', '), had404 };
-            }
-
-            const instructions = data.data?.list?.tweets_timeline?.timeline?.instructions;
-            const pageTweets = parseTweetsFromInstructions(instructions, { quoteDepth: this.quoteDepth, includeRaw });
-            const nextCursor = extractCursorFromInstructions(instructions);
-
-            return { success: true as const, tweets: pageTweets, cursor: nextCursor, had404 };
-          } catch (error) {
-            lastError = error instanceof Error ? error.message : String(error);
-          }
-        }
-
-        return { success: false as const, error: lastError ?? 'Unknown error fetching list timeline', had404 };
+        if (result.success) return result.data;
+        return result.error;
       };
 
-      const fetchWithRefresh = async (pageCount: number, pageCursor?: string) => {
-        const firstAttempt = await fetchPage(pageCount, pageCursor);
-        if (firstAttempt.success) {
-          return firstAttempt;
-        }
-        if (firstAttempt.had404) {
-          await this.refreshQueryIds();
-          const secondAttempt = await fetchPage(pageCount, pageCursor);
-          if (secondAttempt.success) {
-            return secondAttempt;
-          }
-          return { success: false as const, error: secondAttempt.error };
-        }
-        return { success: false as const, error: firstAttempt.error };
-      };
+      const fetchWithRefresh = fetchPage; // graphqlFetchWithRefresh already handles refresh
 
       const unlimited = limit === Number.POSITIVE_INFINITY;
       while (unlimited || tweets.length < limit) {
         const pageCount = unlimited ? pageSize : Math.min(pageSize, limit - tweets.length);
         const page = await fetchWithRefresh(pageCount, cursor);
-        if (!page.success) {
-          return { success: false, error: page.error };
+
+        if (typeof page === 'string') {
+          return { success: false, error: page };
         }
+
         pagesFetched += 1;
 
         let added = 0;

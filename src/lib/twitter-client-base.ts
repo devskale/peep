@@ -28,6 +28,8 @@ export interface GqlFetchOptions {
   body?: string;
   /** When true and all query IDs return 404, also try the generic POST endpoint. */
   fallbackToGenericPost?: boolean;
+  /** When true, variables are sent in URL params even for POST requests. */
+  variablesInUrl?: boolean;
 }
 
 /** Result returned by the GraphQL fetch helpers. */
@@ -231,7 +233,7 @@ export abstract class TwitterClientBase {
     if (fieldToggles) {
       params.set('fieldToggles', JSON.stringify(fieldToggles));
     }
-    if (method === 'GET') {
+    if (method === 'GET' || opts.variablesInUrl) {
       params.set('variables', JSON.stringify(variables));
     }
 

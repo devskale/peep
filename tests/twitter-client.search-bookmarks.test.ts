@@ -124,7 +124,7 @@ describe('TwitterClient search', () => {
     const result = await client.search('hello', 5);
 
     expect(result.success).toBe(false);
-    expect(result.error).toContain('Unknown error fetching search results');
+    expect(result.error).toContain('Unknown error for SearchTimeline');
     expect(mockFetch).not.toHaveBeenCalled();
   });
 
