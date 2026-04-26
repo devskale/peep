@@ -7,11 +7,63 @@
  */
 
 import { existsSync, mkdirSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import type Database from 'better-sqlite3';
-import BetterSqlite3 from 'better-sqlite3';
 import type { TweetData, TwitterUser } from './twitter-client-types.js';
+
+// ---------------------------------------------------------------------------
+// Lazy native module loading
+// ---------------------------------------------------------------------------
+
+const nativeRequire = createRequire(import.meta.url);
+let _BetterSqlite3: ((path: string) => Database.Database) | null = null;
+let _loadError: string | null = null;
+
+/**
+ * Attempt to load better-sqlite3. Returns true on success.
+ * Caches the result so subsequent calls are instant.
+ */
+export function isCacheAvailable(): boolean {
+  if (_BetterSqlite3) {
+    return true;
+  }
+  if (_loadError) {
+    return false;
+  }
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    _BetterSqlite3 = nativeRequire('better-sqlite3');
+    return true;
+  } catch (err) {
+    _loadError = err instanceof Error ? err.message : String(err);
+    return false;
+  }
+}
+
+/**
+ * Returns a human-readable error message if the cache module is unavailable.
+ */
+export function getCacheUnavailableReason(): string | null {
+  if (_loadError) {
+    return `Local cache unavailable: better-sqlite3 native module not found.\n  Error: ${_loadError}\n  Install it with: pnpm install\n  Or use the Node.js runtime (not the compiled binary) for cache features.`;
+  }
+  return null;
+}
+
+/**
+ * Ensure the native module is loaded. Throws a descriptive error if unavailable.
+ */
+function ensureLoaded(): (path: string) => Database.Database {
+  if (_BetterSqlite3) {
+    return _BetterSqlite3;
+  }
+  if (!isCacheAvailable()) {
+    throw new Error(getCacheUnavailableReason() ?? 'better-sqlite3 is not available');
+  }
+  return _BetterSqlite3 as unknown as (path: string) => Database.Database;
+}
 
 // ---------------------------------------------------------------------------
 // Paths
@@ -46,6 +98,7 @@ export function getDb(env?: NodeJS.ProcessEnv): Database.Database {
 
   const dbPath = getCacheDbPath(env);
   ensureDir(getCacheDir(env));
+  const BetterSqlite3 = ensureLoaded();
   const db = BetterSqlite3(dbPath);
   db.pragma('journal_mode = WAL');
   db.pragma('foreign_keys = ON');

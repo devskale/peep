@@ -17,7 +17,7 @@
   "scripts": {
     "build": "pnpm run build:dist && pnpm run build:binary",
     "build:dist": "tsc && node scripts/copy-dist-assets.js",
-    "build:binary": "PEEP_VERSION=$(node -p \"require('./package.json').version\") PEEP_GIT_SHA=$(git rev-parse --short=8 HEAD 2>/dev/null || true) bun build --compile --minify --env=PEEP_* src/cli.ts --outfile peep",
+    "build:binary": "PEEP_VERSION=$(node -p \"require('./package.json').version\") PEEP_GIT_SHA=$(git rev-parse --short=8 HEAD 2>/dev/null || true) bun build --compile --minify --external=better-sqlite3 --env=PEEP_* src/cli.ts --outfile peep",
     "dev": "tsx src/index.ts",
     "peep": "pnpm run build:dist && node dist/cli.js",
     "test": "vitest run",

@@ -16,10 +16,28 @@
  */
 
 import { existsSync, mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import type Database from 'better-sqlite3';
-import BetterSqlite3 from 'better-sqlite3';
+import { isCacheAvailable } from './local-cache.js';
+
+// ---------------------------------------------------------------------------
+// Lazy native module loading
+// ---------------------------------------------------------------------------
+
+const _nativeRequire = createRequire(import.meta.url);
+const _BetterSqlite3: ((path: string) => Database.Database) | null = null;
+
+function ensureMediaLoaded(): (path: string) => Database.Database {
+  if (_BetterSqlite3) {
+    return _BetterSqlite3;
+  }
+  if (!isCacheAvailable()) {
+    throw new Error('Media cache requires better-sqlite3. Run: pnpm install');
+  }
+  return _BetterSqlite3 as unknown as (path: string) => Database.Database;
+}
 
 // ---------------------------------------------------------------------------
 // Config
@@ -60,6 +78,7 @@ function getMediaDb(): Database.Database {
   }
 
   const dbPath = join(mediaDir, 'metadata.db');
+  const BetterSqlite3 = ensureMediaLoaded();
   const db = BetterSqlite3(dbPath);
   db.pragma('journal_mode = WAL');
   db.pragma('foreign_keys = ON');
