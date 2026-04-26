@@ -8,18 +8,18 @@
 import { Command } from 'commander';
 import type { CliContext } from '../cli/shared.js';
 import {
+  getBookmarkPriorityCounts,
   getDb,
-  setBookmarkNote,
-  setBookmarkTags,
-  setBookmarkFolder,
+  listBookmarkFolders,
+  listBookmarkTags,
+  listStoredBookmarks,
   markBookmarkRead,
   markBookmarkUnread,
-  toggleBookmarkRevisit,
+  setBookmarkFolder,
+  setBookmarkNote,
   setBookmarkPriority,
-  listStoredBookmarks,
-  listBookmarkTags,
-  listBookmarkFolders,
-  getBookmarkPriorityCounts,
+  setBookmarkTags,
+  toggleBookmarkRevisit,
 } from '../lib/local-cache.js';
 
 export function registerStarredCommands(program: Command, ctx: CliContext): void {
@@ -70,16 +70,28 @@ export function registerStarredCommands(program: Command, ctx: CliContext): void
         const priorityIcon =
           b.priority === 'critical' ? '🔴' : b.priority === 'high' ? '🟠' : b.priority === 'low' ? '⚪' : '🟢';
         const flags: string[] = [];
-        if (b.isRevisit) flags.push('🔄 revisit');
-        if (!b.isRead) flags.push('📩 unread');
-        if (b.note) flags.push(`📝 ${b.note}`);
-        if (b.tags) flags.push(`🏷️ ${b.tags}`);
+        if (b.isRevisit) {
+          flags.push('🔄 revisit');
+        }
+        if (!b.isRead) {
+          flags.push('📩 unread');
+        }
+        if (b.note) {
+          flags.push(`📝 ${b.note}`);
+        }
+        if (b.tags) {
+          flags.push(`🏷️ ${b.tags}`);
+        }
 
         console.log(`\n${priorityIcon} @${b.authorUsername} — ${b.tweetCreatedAt ?? 'unknown date'}`);
         console.log(`  ${b.tweetText.slice(0, 140)}${b.tweetText.length > 140 ? '...' : ''}`);
         console.log(`  https://x.com/${b.authorUsername}/status/${b.tweetId}`);
-        if (flags.length > 0) console.log(`  ${flags.join('  ')}`);
-        if (b.folderName) console.log(`  📁 ${b.folderName}`);
+        if (flags.length > 0) {
+          console.log(`  ${flags.join('  ')}`);
+        }
+        if (b.folderName) {
+          console.log(`  📁 ${b.folderName}`);
+        }
       }
 
       console.log(`\n${ctx.p('info')}Showing ${bookmarks.length} of ${getBookmarkPriorityCounts(db).total} total.`);

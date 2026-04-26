@@ -9,8 +9,8 @@
 import { existsSync, mkdirSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import BetterSqlite3 from 'better-sqlite3';
 import type Database from 'better-sqlite3';
+import BetterSqlite3 from 'better-sqlite3';
 import type { TweetData, TwitterUser } from './twitter-client-types.js';
 
 // ---------------------------------------------------------------------------
@@ -40,7 +40,9 @@ function ensureDir(path: string): void {
 let dbInstance: Database.Database | null = null;
 
 export function getDb(env?: NodeJS.ProcessEnv): Database.Database {
-  if (dbInstance) return dbInstance;
+  if (dbInstance) {
+    return dbInstance;
+  }
 
   const dbPath = getCacheDbPath(env);
   ensureDir(getCacheDir(env));
@@ -196,16 +198,16 @@ function migrate(db: Database.Database): void {
 function migrateAddColumns(db: Database.Database): void {
   const columns = db.prepare("PRAGMA table_info('bookmarks')").all() as Array<{ name: string }>;
 
-// ---------------------------------------------------------------------------
-// Tweet → DB helpers
-// ---------------------------------------------------------------------------
+  // ---------------------------------------------------------------------------
+  // Tweet → DB helpers
+  // ---------------------------------------------------------------------------
 
   const existing = new Set(columns.map((c) => c.name));
 
   const migrations: Array<{ col: string; def: string }> = [
-    { col: 'note', def: 'TEXT NOT NULL DEFAULT \'\'' },
-    { col: 'tags', def: 'TEXT NOT NULL DEFAULT \'\'' },
-    { col: 'folder_name', def: 'TEXT NOT NULL DEFAULT \'\'' },
+    { col: 'note', def: "TEXT NOT NULL DEFAULT ''" },
+    { col: 'tags', def: "TEXT NOT NULL DEFAULT ''" },
+    { col: 'folder_name', def: "TEXT NOT NULL DEFAULT ''" },
     { col: 'is_read', def: 'INTEGER NOT NULL DEFAULT 0' },
     { col: 'is_revisit', def: 'INTEGER NOT NULL DEFAULT 0' },
     { col: 'priority', def: "TEXT NOT NULL DEFAULT 'normal'" },
@@ -225,6 +227,8 @@ function migrateAddColumns(db: Database.Database): void {
 // ---------------------------------------------------------------------------
 // Tweet → DB helpers
 // ---------------------------------------------------------------------------
+
+const AT_PREFIX_REGEX = /^@/;
 
 function profileKey(tweet: TweetData): string {
   return tweet.authorId ?? `@${tweet.author.username}`;
@@ -281,7 +285,16 @@ export function storeTweet(db: Database.Database, tweet: TweetData, source = 'li
     delMedia.run(tweet.id);
     for (let i = 0; i < tweet.media.length; i++) {
       const m = tweet.media[i];
-      insMedia.run(tweet.id, m.type, m.url, m.width ?? null, m.height ?? null, m.videoUrl ?? null, m.durationMs ?? null, i);
+      insMedia.run(
+        tweet.id,
+        m.type,
+        m.url,
+        m.width ?? null,
+        m.height ?? null,
+        m.videoUrl ?? null,
+        m.durationMs ?? null,
+        i,
+      );
     }
   }
 
@@ -291,13 +304,19 @@ export function storeTweet(db: Database.Database, tweet: TweetData, source = 'li
   }
 
   // Update FTS
-  db.prepare('INSERT INTO tweets_fts(id, text, username) VALUES (?, ?, ?)').run(tweet.id, tweet.text, tweet.author.username);
+  db.prepare('INSERT INTO tweets_fts(id, text, username) VALUES (?, ?, ?)').run(
+    tweet.id,
+    tweet.text,
+    tweet.author.username,
+  );
 }
 
 /** Store many tweets in a transaction. */
 export function storeTweets(db: Database.Database, tweets: TweetData[], source = 'live'): void {
   const tx = db.transaction((items: TweetData[]) => {
-    for (const t of items) storeTweet(db, t, source);
+    for (const t of items) {
+      storeTweet(db, t, source);
+    }
   });
   tx(tweets);
 }
@@ -444,7 +463,7 @@ export function searchLocalTweets(db: Database.Database, params: LocalSearchPara
 
   if (params.author) {
     conditions.push('p.username LIKE ?');
-    values.push(params.author.replace(/^@/, '') + '%');
+    values.push(`${params.author.replace(AT_PREFIX_REGEX, '')}%`);
   }
 
   if (params.since) {
@@ -541,14 +560,19 @@ export function removeBlock(db: Database.Database, profileId: string, accountId 
   db.prepare('DELETE FROM blocks WHERE account_id = ? AND profile_id = ?').run(accountId, profileId);
 }
 
-export function listBlocks(db: Database.Database, accountId = 'default'): Array<{ profileId: string; username: string; name: string; source: string; createdAt: string }> {
-  return db.prepare(`
+export function listBlocks(
+  db: Database.Database,
+  accountId = 'default',
+): Array<{ profileId: string; username: string; name: string; source: string; createdAt: string }> {
+  return db
+    .prepare(`
     SELECT b.profile_id, p.username, p.name, b.source, b.created_at
     FROM blocks b
     JOIN profiles p ON b.profile_id = p.id
     WHERE b.account_id = ?
     ORDER BY b.created_at DESC
-  `).all(accountId) as Array<{ profileId: string; username: string; name: string; source: string; createdAt: string }>;
+  `)
+    .all(accountId) as Array<{ profileId: string; username: string; name: string; source: string; createdAt: string }>;
 }
 
 export function addMute(db: Database.Database, profileId: string, accountId = 'default', source = 'local'): void {
@@ -561,21 +585,30 @@ export function removeMute(db: Database.Database, profileId: string, accountId =
   db.prepare('DELETE FROM mutes WHERE account_id = ? AND profile_id = ?').run(accountId, profileId);
 }
 
-export function listMutes(db: Database.Database, accountId = 'default'): Array<{ profileId: string; username: string; name: string; source: string; createdAt: string }> {
-  return db.prepare(`
+export function listMutes(
+  db: Database.Database,
+  accountId = 'default',
+): Array<{ profileId: string; username: string; name: string; source: string; createdAt: string }> {
+  return db
+    .prepare(`
     SELECT m.profile_id, p.username, p.name, m.source, m.created_at
     FROM mutes m
     JOIN profiles p ON m.profile_id = p.id
     WHERE m.account_id = ?
     ORDER BY m.created_at DESC
-  `).all(accountId) as Array<{ profileId: string; username: string; name: string; source: string; createdAt: string }>;
+  `)
+    .all(accountId) as Array<{ profileId: string; username: string; name: string; source: string; createdAt: string }>;
 }
 
 // ---------------------------------------------------------------------------
 // AI scores
 // ---------------------------------------------------------------------------
 
-export function getAiScore(db: Database.Database, entityKind: string, entityId: string): { score: number; summary: string; reasoning: string; model: string } | null {
+export function getAiScore(
+  db: Database.Database,
+  entityKind: string,
+  entityId: string,
+): { score: number; summary: string; reasoning: string; model: string } | null {
   const row = db
     .prepare('SELECT score, summary, reasoning, model FROM ai_scores WHERE entity_kind = ? AND entity_id = ?')
     .get(entityKind, entityId) as { score: number; summary: string; reasoning: string; model: string } | undefined;
@@ -634,57 +667,78 @@ export function recordBookmark(db: Database.Database, tweetId: string, accountId
 /** Record multiple bookmarks in a transaction. */
 export function recordBookmarks(db: Database.Database, tweetIds: string[], accountId = 'default'): void {
   const tx = db.transaction((ids: string[]) => {
-    for (const id of ids) recordBookmark(db, id, accountId);
+    for (const id of ids) {
+      recordBookmark(db, id, accountId);
+    }
   });
   tx(tweetIds);
 }
 
 /** Update note on a bookmark. */
 export function setBookmarkNote(db: Database.Database, tweetId: string, note: string, accountId = 'default'): boolean {
-  const result = db.prepare(`
+  const result = db
+    .prepare(`
     UPDATE bookmarks SET note = ? WHERE account_id = ? AND tweet_id = ?
-  `).run(note, accountId, tweetId);
+  `)
+    .run(note, accountId, tweetId);
   return result.changes > 0;
 }
 
 /** Set tags on a bookmark (comma-separated). */
 export function setBookmarkTags(db: Database.Database, tweetId: string, tags: string, accountId = 'default'): boolean {
-  const result = db.prepare(`
+  const result = db
+    .prepare(`
     UPDATE bookmarks SET tags = ? WHERE account_id = ? AND tweet_id = ?
-  `).run(tags, accountId, tweetId);
+  `)
+    .run(tags, accountId, tweetId);
   return result.changes > 0;
 }
 
 /** Set folder name on a bookmark. */
-export function setBookmarkFolder(db: Database.Database, tweetId: string, folderName: string, accountId = 'default'): boolean {
-  const result = db.prepare(`
+export function setBookmarkFolder(
+  db: Database.Database,
+  tweetId: string,
+  folderName: string,
+  accountId = 'default',
+): boolean {
+  const result = db
+    .prepare(`
     UPDATE bookmarks SET folder_name = ? WHERE account_id = ? AND tweet_id = ?
-  `).run(folderName, accountId, tweetId);
+  `)
+    .run(folderName, accountId, tweetId);
   return result.changes > 0;
 }
 
 /** Mark a bookmark as read. */
 export function markBookmarkRead(db: Database.Database, tweetId: string, accountId = 'default'): boolean {
-  const result = db.prepare(`
+  const result = db
+    .prepare(`
     UPDATE bookmarks SET is_read = 1 WHERE account_id = ? AND tweet_id = ?
-  `).run(accountId, tweetId);
+  `)
+    .run(accountId, tweetId);
   return result.changes > 0;
 }
 
 /** Mark a bookmark as unread. */
 export function markBookmarkUnread(db: Database.Database, tweetId: string, accountId = 'default'): boolean {
-  const result = db.prepare(`
+  const result = db
+    .prepare(`
     UPDATE bookmarks SET is_read = 0 WHERE account_id = ? AND tweet_id = ?
-  `).run(accountId, tweetId);
+  `)
+    .run(accountId, tweetId);
   return result.changes > 0;
 }
 
 /** Toggle the revisit flag on a bookmark (things you want to come back to). */
 export function toggleBookmarkRevisit(db: Database.Database, tweetId: string, accountId = 'default'): boolean | null {
-  const row = db.prepare(`
+  const row = db
+    .prepare(`
     SELECT is_revisit FROM bookmarks WHERE account_id = ? AND tweet_id = ?
-  `).get(accountId, tweetId) as { is_revisit: number } | undefined;
-  if (!row) return null;
+  `)
+    .get(accountId, tweetId) as { is_revisit: number } | undefined;
+  if (!row) {
+    return null;
+  }
   const newVal = row.is_revisit ? 0 : 1;
   db.prepare(`
     UPDATE bookmarks SET is_revisit = ? WHERE account_id = ? AND tweet_id = ?
@@ -693,30 +747,42 @@ export function toggleBookmarkRevisit(db: Database.Database, tweetId: string, ac
 }
 
 /** Set priority on a bookmark: low, normal, high, critical. */
-export function setBookmarkPriority(db: Database.Database, tweetId: string, priority: string, accountId = 'default'): boolean {
+export function setBookmarkPriority(
+  db: Database.Database,
+  tweetId: string,
+  priority: string,
+  accountId = 'default',
+): boolean {
   const valid = ['low', 'normal', 'high', 'critical'];
-  if (!valid.includes(priority)) return false;
-  const result = db.prepare(`
+  if (!valid.includes(priority)) {
+    return false;
+  }
+  const result = db
+    .prepare(`
     UPDATE bookmarks SET priority = ? WHERE account_id = ? AND tweet_id = ?
-  `).run(priority, accountId, tweetId);
+  `)
+    .run(priority, accountId, tweetId);
   return result.changes > 0;
 }
 
 /** List stored bookmarks with tweet data. */
-export function listStoredBookmarks(db: Database.Database, options: {
-  accountId?: string;
-  unreadOnly?: boolean;
-  revisitOnly?: boolean;
-  tag?: string;
-  folder?: string;
-  priority?: string;
-  author?: string;
-  searchQuery?: string;
-  sortBy?: 'bookmarked_at' | 'priority' | 'tweet_created_at';
-  sortOrder?: 'DESC' | 'ASC';
-  limit?: number;
-  offset?: number;
-} = {}): StoredBookmark[] {
+export function listStoredBookmarks(
+  db: Database.Database,
+  options: {
+    accountId?: string;
+    unreadOnly?: boolean;
+    revisitOnly?: boolean;
+    tag?: string;
+    folder?: string;
+    priority?: string;
+    author?: string;
+    searchQuery?: string;
+    sortBy?: 'bookmarked_at' | 'priority' | 'tweet_created_at';
+    sortOrder?: 'DESC' | 'ASC';
+    limit?: number;
+    offset?: number;
+  } = {},
+): StoredBookmark[] {
   const {
     accountId = 'default',
     unreadOnly = false,
@@ -758,7 +824,7 @@ export function listStoredBookmarks(db: Database.Database, options: {
   }
   if (author) {
     conditions.push('p.username LIKE ?');
-    values.push(author.replace(/^@/, '') + '%');
+    values.push(`${author.replace(AT_PREFIX_REGEX, '')}%`);
   }
   if (searchQuery) {
     conditions.push('t.text LIKE ?');
@@ -767,7 +833,8 @@ export function listStoredBookmarks(db: Database.Database, options: {
 
   const validSortColumns: Record<string, string> = {
     bookmarked_at: 'b.bookmarked_at',
-    priority: "CASE b.priority WHEN 'critical' THEN 4 WHEN 'high' THEN 3 WHEN 'normal' THEN 2 WHEN 'low' THEN 1 ELSE 0 END",
+    priority:
+      "CASE b.priority WHEN 'critical' THEN 4 WHEN 'high' THEN 3 WHEN 'normal' THEN 2 WHEN 'low' THEN 1 ELSE 0 END",
     tweet_created_at: 't.created_at',
   };
   const sortCol = validSortColumns[sortBy] ?? 'b.bookmarked_at';
@@ -791,12 +858,17 @@ export function listStoredBookmarks(db: Database.Database, options: {
 
 /** Get all distinct tags used on bookmarks. */
 export function listBookmarkTags(db: Database.Database, accountId = 'default'): string[] {
-  const rows = db.prepare(`
+  const rows = db
+    .prepare(`
     SELECT DISTINCT tags FROM bookmarks WHERE account_id = ? AND tags != ''
-  `).all(accountId) as Array<{ tags: string }>;
+  `)
+    .all(accountId) as Array<{ tags: string }>;
   const tagSet = new Set<string>();
   for (const row of rows) {
-    for (const tag of row.tags.split(',').map((t) => t.trim()).filter(Boolean)) {
+    for (const tag of row.tags
+      .split(',')
+      .map((t) => t.trim())
+      .filter(Boolean)) {
       tagSet.add(tag);
     }
   }
@@ -805,21 +877,51 @@ export function listBookmarkTags(db: Database.Database, accountId = 'default'): 
 
 /** Get all distinct folder names used on bookmarks. */
 export function listBookmarkFolders(db: Database.Database, accountId = 'default'): string[] {
-  const rows = db.prepare(`
+  const rows = db
+    .prepare(`
     SELECT DISTINCT folder_name FROM bookmarks WHERE account_id = ? AND folder_name != ''
-  `).all(accountId) as Array<{ folder_name: string }>;
+  `)
+    .all(accountId) as Array<{ folder_name: string }>;
   return rows.map((r) => r.folder_name).sort();
 }
 
 /** Get bookmark counts by priority. */
-export function getBookmarkPriorityCounts(db: Database.Database, accountId = 'default'): { total: number; critical: number; high: number; normal: number; low: number; unread: number; revisit: number } {
-  const all = (db.prepare('SELECT COUNT(*) as c FROM bookmarks WHERE account_id = ?').get(accountId) as { c: number }).c;
-  const critical = (db.prepare("SELECT COUNT(*) as c FROM bookmarks WHERE account_id = ? AND priority = 'critical'").get(accountId) as { c: number }).c;
-  const high = (db.prepare("SELECT COUNT(*) as c FROM bookmarks WHERE account_id = ? AND priority = 'high'").get(accountId) as { c: number }).c;
-  const normal = (db.prepare("SELECT COUNT(*) as c FROM bookmarks WHERE account_id = ? AND priority = 'normal'").get(accountId) as { c: number }).c;
-  const low = (db.prepare("SELECT COUNT(*) as c FROM bookmarks WHERE account_id = ? AND priority = 'low'").get(accountId) as { c: number }).c;
-  const unread = (db.prepare('SELECT COUNT(*) as c FROM bookmarks WHERE account_id = ? AND is_read = 0').get(accountId) as { c: number }).c;
-  const revisit = (db.prepare('SELECT COUNT(*) as c FROM bookmarks WHERE account_id = ? AND is_revisit = 1').get(accountId) as { c: number }).c;
+export function getBookmarkPriorityCounts(
+  db: Database.Database,
+  accountId = 'default',
+): { total: number; critical: number; high: number; normal: number; low: number; unread: number; revisit: number } {
+  const all = (db.prepare('SELECT COUNT(*) as c FROM bookmarks WHERE account_id = ?').get(accountId) as { c: number })
+    .c;
+  const critical = (
+    db.prepare("SELECT COUNT(*) as c FROM bookmarks WHERE account_id = ? AND priority = 'critical'").get(accountId) as {
+      c: number;
+    }
+  ).c;
+  const high = (
+    db.prepare("SELECT COUNT(*) as c FROM bookmarks WHERE account_id = ? AND priority = 'high'").get(accountId) as {
+      c: number;
+    }
+  ).c;
+  const normal = (
+    db.prepare("SELECT COUNT(*) as c FROM bookmarks WHERE account_id = ? AND priority = 'normal'").get(accountId) as {
+      c: number;
+    }
+  ).c;
+  const low = (
+    db.prepare("SELECT COUNT(*) as c FROM bookmarks WHERE account_id = ? AND priority = 'low'").get(accountId) as {
+      c: number;
+    }
+  ).c;
+  const unread = (
+    db.prepare('SELECT COUNT(*) as c FROM bookmarks WHERE account_id = ? AND is_read = 0').get(accountId) as {
+      c: number;
+    }
+  ).c;
+  const revisit = (
+    db.prepare('SELECT COUNT(*) as c FROM bookmarks WHERE account_id = ? AND is_revisit = 1').get(accountId) as {
+      c: number;
+    }
+  ).c;
   return { total: all, critical, high, normal, low, unread, revisit };
 }
 
@@ -827,7 +929,15 @@ export function getBookmarkPriorityCounts(db: Database.Database, accountId = 'de
 // Stats
 // ---------------------------------------------------------------------------
 
-export function getCacheStats(db: Database.Database): { tweets: number; profiles: number; bookmarks: number; likes: number; blocks: number; mutes: number; aiScores: number } {
+export function getCacheStats(db: Database.Database): {
+  tweets: number;
+  profiles: number;
+  bookmarks: number;
+  likes: number;
+  blocks: number;
+  mutes: number;
+  aiScores: number;
+} {
   const tweets = (db.prepare('SELECT COUNT(*) as c FROM tweets').get() as { c: number }).c;
   const profiles = (db.prepare('SELECT COUNT(*) as c FROM profiles').get() as { c: number }).c;
   const bookmarks = (db.prepare('SELECT COUNT(*) as c FROM bookmarks').get() as { c: number }).c;

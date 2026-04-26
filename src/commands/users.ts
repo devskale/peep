@@ -1,7 +1,7 @@
 import type { Command } from 'commander';
 import type { CliContext } from '../cli/shared.js';
-import { normalizeHandle } from '../lib/normalize-handle.js';
 import { cacheTweets, cacheUsers } from '../lib/cache-helpers.js';
+import { normalizeHandle } from '../lib/normalize-handle.js';
 import { TwitterClient } from '../lib/twitter-client.js';
 import type { AboutAccountProfile, TwitterUser } from '../lib/twitter-client-types.js';
 

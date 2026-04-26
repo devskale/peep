@@ -1,8 +1,8 @@
 import type { Command } from 'commander';
 import { parsePaginationFlags } from '../cli/pagination.js';
 import type { CliContext } from '../cli/shared.js';
+import { cacheTweets } from '../lib/cache-helpers.js';
 import { mentionsQueryFromUserOption, normalizeHandle } from '../lib/normalize-handle.js';
-import { cacheTweets, cacheUsers } from '../lib/cache-helpers.js';
 import { TwitterClient } from '../lib/twitter-client.js';
 
 export function registerSearchCommands(program: Command, ctx: CliContext): void {

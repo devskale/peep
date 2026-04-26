@@ -281,9 +281,15 @@ export function createCliContext(normalizedArgs: string[], env: NodeJS.ProcessEn
   }
 
   function resolveAllowWrite(options: { allowWrite?: boolean }): boolean {
-    if (options.allowWrite === true) return true;
-    if (env.PEEP_ALLOW_WRITE === '1' || env.PEEP_ALLOW_WRITE === 'true') return true;
-    if (config.allowWrite === true) return true;
+    if (options.allowWrite === true) {
+      return true;
+    }
+    if (env.PEEP_ALLOW_WRITE === '1' || env.PEEP_ALLOW_WRITE === 'true') {
+      return true;
+    }
+    if (config.allowWrite === true) {
+      return true;
+    }
     return false;
   }
 

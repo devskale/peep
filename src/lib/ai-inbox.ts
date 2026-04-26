@@ -63,7 +63,7 @@ function getHeuristicScoreForMention(text: string, followersCount: number): numb
   return Math.max(0, Math.min(100, 44 + influence + specificityBoost + lengthBoost));
 }
 
-function getHeuristicScoreForDm(followersCount: number, unreadCount = 0, needsReply = false): number {
+function _getHeuristicScoreForDm(followersCount: number, unreadCount = 0, needsReply = false): number {
   const unreadBoost = Math.min(15, unreadCount * 5);
   const replyBoost = needsReply ? 12 : 0;
   return Math.max(0, Math.min(100, 34 + Math.round(followersCount * 0.32) + unreadBoost + replyBoost));
@@ -123,7 +123,9 @@ export async function scoreWithOpenAI(input: InboxScoreInput): Promise<OpenAISco
   };
 
   const content = payload.choices?.[0]?.message?.content;
-  if (!content) throw new Error('OpenAI returned no content');
+  if (!content) {
+    throw new Error('OpenAI returned no content');
+  }
 
   const parsed = JSON.parse(content) as { score?: number; summary?: string; reasoning?: string };
 
@@ -210,7 +212,9 @@ export function buildInboxFromCache(db: Database.Database, options: InboxQueryOp
   const filtered = items
     .filter((item) => item.score >= lowSignalFloor)
     .sort((a, b) => {
-      if (b.score !== a.score) return b.score - a.score;
+      if (b.score !== a.score) {
+        return b.score - a.score;
+      }
       return (b.createdAt ?? '').localeCompare(a.createdAt ?? '');
     })
     .slice(0, limit);
@@ -228,12 +232,17 @@ export function buildInboxFromCache(db: Database.Database, options: InboxQueryOp
 /**
  * Score inbox items with OpenAI and persist the scores.
  */
-export async function scoreInbox(db: Database.Database, options: { kind?: string; limit?: number } = {}): Promise<{ ok: boolean; scored: number }> {
+export async function scoreInbox(
+  db: Database.Database,
+  options: { kind?: string; limit?: number } = {},
+): Promise<{ ok: boolean; scored: number }> {
   const inbox = buildInboxFromCache(db, { kind: options.kind as InboxQueryOptions['kind'], limit: options.limit ?? 8 });
   let scored = 0;
 
   for (const item of inbox.items) {
-    if (item.source === 'openai') continue; // already scored
+    if (item.source === 'openai') {
+      continue; // already scored
+    }
 
     try {
       const result = await scoreWithOpenAI({

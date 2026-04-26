@@ -1,8 +1,8 @@
 import type { Command } from 'commander';
 import { parsePaginationFlags } from '../cli/pagination.js';
 import type { CliContext } from '../cli/shared.js';
-import { formatStatsLine } from '../lib/output.js';
 import { cacheTweets } from '../lib/cache-helpers.js';
+import { formatStatsLine } from '../lib/output.js';
 import { TwitterClient } from '../lib/twitter-client.js';
 
 export function registerReadCommands(program: Command, ctx: CliContext): void {

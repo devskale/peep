@@ -6,8 +6,23 @@
 
 import type { Command } from 'commander';
 import type { CliContext } from '../cli/shared.js';
-import { getDb, addBlock, removeBlock, listBlocks, addMute, removeMute, listMutes, storeUser } from '../lib/local-cache.js';
+import {
+  addBlock,
+  addMute,
+  getDb,
+  listBlocks,
+  listMutes,
+  removeBlock,
+  removeMute,
+  storeUser,
+} from '../lib/local-cache.js';
 import type { TwitterUser } from '../lib/twitter-client-types.js';
+
+const HANDLE_REGEX = /^@[a-zA-Z0-9_]{1,15}$/;
+const NUMERIC_ID_REGEX = /^\d+$/;
+const AT_PREFIX_REGEX = /^@/;
+const MARKDOWN_BULLET_REGEX = /^[-*]\s+/;
+const X_URL_HANDLE_REGEX = /x\.com\/([^/]+)/;
 
 export function registerBlockMuteCommands(program: Command, ctx: CliContext): void {
   // ---- blocks ----
@@ -126,16 +141,20 @@ export function registerBlockMuteCommands(program: Command, ctx: CliContext): vo
 
 async function resolveProfile(handleOrId: string, ctx: CliContext): Promise<TwitterUser | null> {
   const { cookies, warnings } = await ctx.resolveCredentialsFromOptions({} as never);
-  for (const w of warnings) console.error(`${ctx.p('warn')}${w}`);
+  for (const w of warnings) {
+    console.error(`${ctx.p('warn')}${w}`);
+  }
 
-  if (!cookies.authToken || !cookies.ct0) return null;
+  if (!cookies.authToken || !cookies.ct0) {
+    return null;
+  }
 
   const { TwitterClient } = await import('../lib/twitter-client.js');
   const client = new TwitterClient({ cookies, timeoutMs: 10000 });
 
   // Try as username first
-  const handle = handleOrId.replace(/^@/, '');
-  if (/^[a-zA-Z0-9_]{1,15}$/.test(handle)) {
+  const handle = handleOrId.replace(AT_PREFIX_REGEX, '');
+  if (HANDLE_REGEX.test(handle)) {
     const result = await client.getUserIdByUsername(handle);
     if (result.success && result.userId) {
       return {
@@ -147,12 +166,12 @@ async function resolveProfile(handleOrId: string, ctx: CliContext): Promise<Twit
   }
 
   // Try as numeric ID
-  if (/^\d+$/.test(handleOrId)) {
+  if (NUMERIC_ID_REGEX.test(handleOrId)) {
     return { id: handleOrId, username: handleOrId, name: handleOrId };
   }
 
   // Try extracting ID from URL
-  const urlMatch = handleOrId.match(/x\.com\/([^/]+)/);
+  const urlMatch = X_URL_HANDLE_REGEX.exec(handleOrId);
   if (urlMatch) {
     const result = await client.getUserIdByUsername(urlMatch[1]);
     if (result.success && result.userId) {
@@ -171,7 +190,7 @@ async function addBlockEntry(db: ReturnType<typeof getDb>, handleOrId: string, c
   const profile = await resolveProfile(handleOrId, ctx);
   if (!profile) {
     // Store with raw handle as ID if resolution fails
-    const id = handleOrId.replace(/^@/, '');
+    const id = handleOrId.replace(AT_PREFIX_REGEX, '');
     storeUser(db, { id, username: id, name: id });
     addBlock(db, id);
     console.log(`${ctx.p('ok')}Blocked ${id} (local only — could not resolve profile)`);
@@ -185,7 +204,7 @@ async function addBlockEntry(db: ReturnType<typeof getDb>, handleOrId: string, c
 
 async function removeBlockEntry(db: ReturnType<typeof getDb>, handleOrId: string, ctx: CliContext): Promise<void> {
   const profile = await resolveProfile(handleOrId, ctx);
-  const id = profile?.id ?? handleOrId.replace(/^@/, '');
+  const id = profile?.id ?? handleOrId.replace(AT_PREFIX_REGEX, '');
   removeBlock(db, id);
   console.log(`${ctx.p('ok')}Unblocked ${profile ? `@${profile.username}` : id}`);
 }
@@ -193,7 +212,7 @@ async function removeBlockEntry(db: ReturnType<typeof getDb>, handleOrId: string
 async function addMuteEntry(db: ReturnType<typeof getDb>, handleOrId: string, ctx: CliContext): Promise<void> {
   const profile = await resolveProfile(handleOrId, ctx);
   if (!profile) {
-    const id = handleOrId.replace(/^@/, '');
+    const id = handleOrId.replace(AT_PREFIX_REGEX, '');
     storeUser(db, { id, username: id, name: id });
     addMute(db, id);
     console.log(`${ctx.p('ok')}Muted ${id} (local only — could not resolve profile)`);
@@ -207,12 +226,17 @@ async function addMuteEntry(db: ReturnType<typeof getDb>, handleOrId: string, ct
 
 async function removeMuteEntry(db: ReturnType<typeof getDb>, handleOrId: string, ctx: CliContext): Promise<void> {
   const profile = await resolveProfile(handleOrId, ctx);
-  const id = profile?.id ?? handleOrId.replace(/^@/, '');
+  const id = profile?.id ?? handleOrId.replace(AT_PREFIX_REGEX, '');
   removeMute(db, id);
   console.log(`${ctx.p('ok')}Unmuted ${profile ? `@${profile.username}` : id}`);
 }
 
-async function importBlocklist(db: ReturnType<typeof getDb>, filePath: string, ctx: CliContext, isJson: boolean): Promise<void> {
+async function importBlocklist(
+  db: ReturnType<typeof getDb>,
+  filePath: string,
+  ctx: CliContext,
+  isJson: boolean,
+): Promise<void> {
   const { readFileSync } = await import('node:fs');
   const content = readFileSync(filePath, 'utf8');
   const lines = content
@@ -230,10 +254,10 @@ async function importBlocklist(db: ReturnType<typeof getDb>, filePath: string, c
 
   for (const line of lines) {
     // Strip markdown bullets
-    const cleaned = line.replace(/^[-*]\s+/, '').trim();
+    const cleaned = line.replace(MARKDOWN_BULLET_REGEX, '').trim();
     // Extract handle from URL if present
-    const handleMatch = cleaned.match(/x\.com\/([^/]+)/);
-    const handle = handleMatch ? handleMatch[1] : cleaned.replace(/^@/, '');
+    const handleMatch = X_URL_HANDLE_REGEX.exec(cleaned);
+    const handle = handleMatch ? handleMatch[1] : cleaned.replace(AT_PREFIX_REGEX, '');
 
     if (!handle) {
       failed++;

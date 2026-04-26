@@ -6,8 +6,8 @@
 
 import type { Command } from 'commander';
 import type { CliContext } from '../cli/shared.js';
+import { buildInboxFromCache, type InboxQueryOptions, scoreInbox } from '../lib/ai-inbox.js';
 import { getDb } from '../lib/local-cache.js';
-import { buildInboxFromCache, scoreInbox, type InboxQueryOptions } from '../lib/ai-inbox.js';
 
 export function registerInboxCommand(program: Command, ctx: CliContext): void {
   program
@@ -20,7 +20,14 @@ export function registerInboxCommand(program: Command, ctx: CliContext): void {
     .option('--min-score <number>', 'Minimum score threshold', '0')
     .option('--json', 'Output as JSON')
     .action(
-      async (cmdOpts: { count?: string; kind?: string; score?: boolean; hideLowSignal?: boolean; minScore?: string; json?: boolean }) => {
+      async (cmdOpts: {
+        count?: string;
+        kind?: string;
+        score?: boolean;
+        hideLowSignal?: boolean;
+        minScore?: string;
+        json?: boolean;
+      }) => {
         const db = getDb();
         const isJson = Boolean(cmdOpts.json);
         const count = Number.parseInt(cmdOpts.count || '20', 10);
@@ -55,7 +62,9 @@ export function registerInboxCommand(program: Command, ctx: CliContext): void {
         } else {
           if (inbox.items.length === 0) {
             console.log('No inbox items found.');
-            console.log('Tip: Run commands like `peep mentions` or `peep home` to populate the cache, or import an archive.');
+            console.log(
+              'Tip: Run commands like `peep mentions` or `peep home` to populate the cache, or import an archive.',
+            );
             return;
           }
 
@@ -65,11 +74,17 @@ export function registerInboxCommand(program: Command, ctx: CliContext): void {
             console.log(`  ${item.title}`);
             console.log(`  ${item.text.slice(0, 120)}${item.text.length > 120 ? '...' : ''}`);
             console.log(`  @${item.participant.username} · ${item.participant.followersCount ?? 0} followers`);
-            if (item.summary) console.log(`  ${item.reasoning}`);
-            if (item.createdAt) console.log(`  ${item.createdAt}`);
+            if (item.summary) {
+              console.log(`  ${item.reasoning}`);
+            }
+            if (item.createdAt) {
+              console.log(`  ${item.createdAt}`);
+            }
           }
 
-          console.log(`\n${ctx.p('info')}${inbox.stats.total} items (${inbox.stats.openai} AI-scored, ${inbox.stats.heuristic} heuristic)`);
+          console.log(
+            `\n${ctx.p('info')}${inbox.stats.total} items (${inbox.stats.openai} AI-scored, ${inbox.stats.heuristic} heuristic)`,
+          );
           if (cmdOpts.score) {
             console.log('  Use --score to refresh AI rankings.');
           }

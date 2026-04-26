@@ -1,8 +1,8 @@
 import type { Command } from 'commander';
 import { parsePaginationFlags } from '../cli/pagination.js';
 import type { CliContext } from '../cli/shared.js';
-import { extractBookmarkFolderId } from '../lib/extract-bookmark-folder-id.js';
 import { cacheTweets } from '../lib/cache-helpers.js';
+import { extractBookmarkFolderId } from '../lib/extract-bookmark-folder-id.js';
 import { getDb, recordBookmarks } from '../lib/local-cache.js';
 import { addThreadMetadata, filterAuthorChain, filterAuthorOnly, filterFullChain } from '../lib/thread-filters.js';
 import { TwitterClient } from '../lib/twitter-client.js';
@@ -121,8 +121,13 @@ export function registerBookmarksCommand(program: Command, ctx: CliContext): voi
         // Record bookmarks in local cache for starred management
         try {
           const db = getDb();
-          recordBookmarks(db, bookmarks.map(b => b.id));
-        } catch { /* cache is optional */ }
+          recordBookmarks(
+            db,
+            bookmarks.map((b) => b.id),
+          );
+        } catch {
+          /* cache is optional */
+        }
 
         const expandedResults: TweetData[] = [];
         const threadCache = new Map<string, TweetData[]>();

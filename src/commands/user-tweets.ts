@@ -1,8 +1,8 @@
 import type { Command } from 'commander';
 import { parseNonNegativeIntFlag, parsePositiveIntFlag } from '../cli/pagination.js';
 import type { CliContext } from '../cli/shared.js';
-import { normalizeHandle } from '../lib/normalize-handle.js';
 import { cacheTweets } from '../lib/cache-helpers.js';
+import { normalizeHandle } from '../lib/normalize-handle.js';
 import { TwitterClient } from '../lib/twitter-client.js';
 
 export function registerUserTweetsCommand(program: Command, ctx: CliContext): void {

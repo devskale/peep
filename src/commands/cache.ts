@@ -4,7 +4,7 @@
 
 import type { Command } from 'commander';
 import type { CliContext } from '../cli/shared.js';
-import { getDb, getCacheStats, getCacheDbPath } from '../lib/local-cache.js';
+import { getCacheDbPath, getCacheStats, getDb } from '../lib/local-cache.js';
 
 export function registerCacheCommand(program: Command, ctx: CliContext): void {
   program

@@ -6,8 +6,8 @@
 
 import { Command } from 'commander';
 import type { CliContext } from '../cli/shared.js';
-import { getDb, getCacheStats } from '../lib/local-cache.js';
 import { findArchives, importArchive } from '../lib/archive-import.js';
+import { getCacheStats, getDb } from '../lib/local-cache.js';
 
 export function registerArchiveCommands(program: Command, ctx: CliContext): void {
   program

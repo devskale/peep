@@ -10,9 +10,10 @@ import type { CliContext } from '../cli/shared.js';
 import { normalizeHandle } from '../lib/normalize-handle.js';
 import { TwitterClient } from '../lib/twitter-client.js';
 
+const NUMERIC_ID_REGEX = /^\d+$/;
+
 export function registerProfileCommands(program: Command, ctx: CliContext): void {
-  const profileCmd = new Command('profile')
-    .description('Inspect user profiles');
+  const profileCmd = new Command('profile').description('Inspect user profiles');
 
   profileCmd
     .command('replies')
@@ -27,7 +28,9 @@ export function registerProfileCommands(program: Command, ctx: CliContext): void
       const isJson = Boolean(cmdOpts.json);
 
       const { cookies, warnings } = await ctx.resolveCredentialsFromOptions(opts);
-      for (const w of warnings) console.error(`${ctx.p('warn')}${w}`);
+      for (const w of warnings) {
+        console.error(`${ctx.p('warn')}${w}`);
+      }
 
       if (!cookies.authToken || !cookies.ct0) {
         console.error(`${ctx.p('err')}Missing required credentials`);
@@ -47,7 +50,7 @@ export function registerProfileCommands(program: Command, ctx: CliContext): void
         }
       }
 
-      if (!userId && /^\d+$/.test(handleOrId)) {
+      if (!userId && NUMERIC_ID_REGEX.test(handleOrId)) {
         userId = handleOrId;
       }
 
@@ -63,7 +66,9 @@ export function registerProfileCommands(program: Command, ctx: CliContext): void
       const result = await client.getUserTweets(userId, scanSize);
 
       if (!result.success || !result.tweets) {
-        console.error(`${ctx.p('err')}Failed to fetch user tweets: ${'error' in result ? result.error : 'Unknown error'}`);
+        console.error(
+          `${ctx.p('err')}Failed to fetch user tweets: ${'error' in result ? result.error : 'Unknown error'}`,
+        );
         process.exit(1);
       }
 

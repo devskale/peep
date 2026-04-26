@@ -5,8 +5,6 @@
  * bookmarks, profiles, and DMs into the local SQLite cache.
  */
 
-import { createReadStream } from 'node:fs';
-import { createInterface } from 'node:readline';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import type Database from 'better-sqlite3';
@@ -15,16 +13,11 @@ import type { TweetData } from './twitter-client-types.js';
 
 const execFileAsync = promisify(execFile);
 
+const ARCHIVE_NAME_PATTERNS = [/^twitter-.*\.zip$/i, /^x-.*\.zip$/i, /archive.*\.zip$/i];
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
-
-interface ArchiveAccount {
-  accountId: string;
-  username: string;
-  displayName: string;
-  createdAt: string;
-}
 
 interface ArchiveTweet {
   tweetId: string;
@@ -73,7 +66,9 @@ const ARCHIVE_JSON_PAYLOAD = /=\s*(\[[\s\S]*\]|\{[\s\S]*\})/s;
 
 function extractArchiveJson(content: string): unknown {
   const match = ARCHIVE_JSON_PAYLOAD.exec(content);
-  if (!match) return [];
+  if (!match) {
+    return [];
+  }
   try {
     return JSON.parse(match[1]);
   } catch {
@@ -88,60 +83,68 @@ function parseArchiveArray(content: string): Record<string, unknown>[] {
 
 function parseTweet(row: Record<string, unknown>): ArchiveTweet | null {
   const tweet = row.tweet as Record<string, unknown> | undefined;
-  if (!tweet) return null;
+  if (!tweet) {
+    return null;
+  }
 
   const id = tweet.id_str as string | undefined;
   const fullText = tweet.full_text as string | undefined;
-  if (!id || !fullText) return null;
+  if (!id || !fullText) {
+    return null;
+  }
 
   const user = row.user as Record<string, unknown> | undefined;
   const inReply = tweet.in_reply_to_status_id_str as string | undefined;
   const inReplyUser = tweet.in_reply_to_user_id_str as string | undefined;
-  const convId = tweet.conversation_id_str as string | undefined ?? id;
+  const convId = (tweet.conversation_id_str as string | undefined) ?? id;
 
   return {
     tweetId: id,
     fullText,
-    createdAt: tweet.created_at as string ?? '',
+    createdAt: (tweet.created_at as string) ?? '',
     inReplyToTweetId: inReply ?? null,
     inReplyToUserId: inReplyUser ?? null,
     conversationId: convId,
     replyCount: Number(tweet.reply_count ?? 0),
     retweetCount: Number(tweet.retweet_count ?? 0),
     likeCount: Number(tweet.favorite_count ?? 0),
-    authorId: user?.id_str as string ?? '',
-    authorUsername: user?.screen_name as string ?? '',
-    authorDisplayName: user?.name as string ?? '',
+    authorId: (user?.id_str as string) ?? '',
+    authorUsername: (user?.screen_name as string) ?? '',
+    authorDisplayName: (user?.name as string) ?? '',
   };
 }
 
 function parseLike(row: Record<string, unknown>): ArchiveLike | null {
   const tweetId = row.tweetId as string | undefined;
   const fullText = row.fullText as string | undefined;
-  if (!tweetId) return null;
+  if (!tweetId) {
+    return null;
+  }
 
-  const expanded = row.expandedUrl as string | undefined;
+  const _expanded = row.expandedUrl as string | undefined;
   const user = row.user as Record<string, unknown> | undefined;
 
   return {
     tweetId,
     fullText: fullText ?? '',
-    createdAt: row.date as string ?? '',
-    authorId: user?.id_str as string ?? '',
-    authorUsername: user?.screen_name as string ?? '',
-    authorDisplayName: user?.name as string ?? '',
+    createdAt: (row.date as string) ?? '',
+    authorId: (user?.id_str as string) ?? '',
+    authorUsername: (user?.screen_name as string) ?? '',
+    authorDisplayName: (user?.name as string) ?? '',
   };
 }
 
 function parseFollower(row: Record<string, unknown>): ArchiveFollower | null {
   const userId = row.userId as string | undefined;
   const username = row.userName as string | undefined;
-  if (!userId || !username) return null;
+  if (!userId || !username) {
+    return null;
+  }
 
   return {
     userId,
     username,
-    displayName: row.titleName as string ?? '',
+    displayName: (row.titleName as string) ?? '',
   };
 }
 
@@ -156,19 +159,15 @@ export async function findArchives(): Promise<Array<{ path: string; size: number
   const candidates: Map<string, { path: string; size: number }> = new Map();
 
   // Try common download locations
-  const { readdirSync, statSync, existsSync } = await import('node:fs');
+  const { readdirSync, statSync } = await import('node:fs');
 
-  const dirs = [
-    `${process.env.HOME ?? '/tmp'}/Downloads`,
-  ];
-
-  const patterns = [/^twitter-.*\.zip$/i, /^x-.*\.zip$/i, /archive.*\.zip$/i];
+  const dirs = [`${process.env.HOME ?? '/tmp'}/Downloads`];
 
   for (const dir of dirs) {
     try {
       const entries = readdirSync(dir);
       for (const entry of entries) {
-        if (patterns.some((p) => p.test(entry))) {
+        if (ARCHIVE_NAME_PATTERNS.some((pat) => pat.test(entry))) {
           const fullPath = `${dir}/${entry}`;
           try {
             const stat = statSync(fullPath);
@@ -187,10 +186,7 @@ export async function findArchives(): Promise<Array<{ path: string; size: number
 
   // Try Spotlight on macOS
   if (process.platform === 'darwin') {
-    const queries = [
-      'kMDItemDisplayName == "twitter-*.zip"',
-      'kMDItemDisplayName == "x-*.zip"',
-    ];
+    const queries = ['kMDItemDisplayName == "twitter-*.zip"', 'kMDItemDisplayName == "x-*.zip"'];
     for (const query of queries) {
       try {
         const { stdout } = await execAsync(`mdfind -onlyin ~ '${query}'`, { timeout: 5000 });
@@ -220,7 +216,9 @@ export async function findArchives(): Promise<Array<{ path: string; size: number
 // ---------------------------------------------------------------------------
 
 function readJsFileFromArchive(archivePath: string, relativePath: string): Promise<string> {
-  return execFileAsync('unzip', ['-p', archivePath, relativePath], { maxBuffer: 512 * 1024 * 1024 }).then(r => r.stdout);
+  return execFileAsync('unzip', ['-p', archivePath, relativePath], { maxBuffer: 512 * 1024 * 1024 }).then(
+    (r) => r.stdout,
+  );
 }
 
 function fileExistsInArchive(archivePath: string, relativePath: string): Promise<boolean> {
@@ -229,10 +227,7 @@ function fileExistsInArchive(archivePath: string, relativePath: string): Promise
     .catch(() => false);
 }
 
-export async function importArchive(
-  db: Database.Database,
-  archivePath: string,
-): Promise<ArchiveImportResult> {
+export async function importArchive(db: Database.Database, archivePath: string): Promise<ArchiveImportResult> {
   let tweetCount = 0;
   let likeCount = 0;
   let followerCount = 0;
@@ -240,13 +235,17 @@ export async function importArchive(
   const profileIds = new Set<string>();
 
   const importTweets = async (path: string) => {
-    if (!(await fileExistsInArchive(archivePath, path))) return;
+    if (!(await fileExistsInArchive(archivePath, path))) {
+      return;
+    }
     const content = await readJsFileFromArchive(archivePath, path);
     const rows = parseArchiveArray(content);
     const tx = db.transaction(() => {
       for (const row of rows) {
         const parsed = parseTweet(row);
-        if (!parsed) continue;
+        if (!parsed) {
+          continue;
+        }
 
         // Store profile
         storeUser(db, {
@@ -277,13 +276,17 @@ export async function importArchive(
   };
 
   const importLikes = async (path: string) => {
-    if (!(await fileExistsInArchive(archivePath, path))) return;
+    if (!(await fileExistsInArchive(archivePath, path))) {
+      return;
+    }
     const content = await readJsFileFromArchive(archivePath, path);
     const rows = parseArchiveArray(content);
     const tx = db.transaction(() => {
       for (const row of rows) {
         const parsed = parseLike(row);
-        if (!parsed) continue;
+        if (!parsed) {
+          continue;
+        }
 
         storeUser(db, {
           id: parsed.authorId,
@@ -310,13 +313,17 @@ export async function importArchive(
   };
 
   const importFollowers = async (path: string, isFollowing: boolean) => {
-    if (!(await fileExistsInArchive(archivePath, path))) return;
+    if (!(await fileExistsInArchive(archivePath, path))) {
+      return;
+    }
     const content = await readJsFileFromArchive(archivePath, path);
     const rows = parseArchiveArray(content);
     const tx = db.transaction(() => {
       for (const row of rows) {
         const parsed = parseFollower(row);
-        if (!parsed) continue;
+        if (!parsed) {
+          continue;
+        }
 
         storeUser(db, {
           id: parsed.userId,
@@ -325,8 +332,11 @@ export async function importArchive(
         });
         profileIds.add(parsed.userId);
 
-        if (isFollowing) followingCount++;
-        else followerCount++;
+        if (isFollowing) {
+          followingCount++;
+        } else {
+          followerCount++;
+        }
       }
     });
     tx();
