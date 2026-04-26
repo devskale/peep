@@ -239,7 +239,7 @@ export function upsertProfile(db: Database.Database, tweet: TweetData): string {
   const id = profileKey(tweet);
   db.prepare(`
     INSERT INTO profiles (id, username, name, description, followers_count, following_count, is_blue_verified, profile_image_url)
-    VALUES (?, ?, ?, ?, 0, 0, 0, NULL)
+    VALUES (?, ?, ?, '', 0, 0, 0, NULL)
     ON CONFLICT(id) DO UPDATE SET
       username = excluded.username,
       name     = excluded.name,
@@ -566,7 +566,7 @@ export function listBlocks(
 ): Array<{ profileId: string; username: string; name: string; source: string; createdAt: string }> {
   return db
     .prepare(`
-    SELECT b.profile_id, p.username, p.name, b.source, b.created_at
+    SELECT b.profile_id AS profileId, p.username, p.name, b.source, b.created_at AS createdAt
     FROM blocks b
     JOIN profiles p ON b.profile_id = p.id
     WHERE b.account_id = ?
@@ -591,7 +591,7 @@ export function listMutes(
 ): Array<{ profileId: string; username: string; name: string; source: string; createdAt: string }> {
   return db
     .prepare(`
-    SELECT m.profile_id, p.username, p.name, m.source, m.created_at
+    SELECT m.profile_id AS profileId, p.username, p.name, m.source, m.created_at AS createdAt
     FROM mutes m
     JOIN profiles p ON m.profile_id = p.id
     WHERE m.account_id = ?
@@ -841,10 +841,11 @@ export function listStoredBookmarks(
   const order = sortOrder === 'ASC' ? 'ASC' : 'DESC';
 
   const sql = `
-    SELECT b.tweet_id, b.account_id, b.bookmarked_at, b.note, b.tags, b.folder_name,
-           b.is_read, b.is_revisit, b.priority,
-           t.text as tweet_text, t.created_at as tweet_created_at,
-           p.username as author_username, p.name as author_name
+    SELECT b.tweet_id AS tweetId, b.account_id AS accountId, b.bookmarked_at AS bookmarkedAt,
+           b.note, b.tags, b.folder_name AS folderName,
+           b.is_read AS isRead, b.is_revisit AS isRevisit, b.priority,
+           t.text AS tweetText, t.created_at AS tweetCreatedAt,
+           p.username AS authorUsername, p.name AS authorName
     FROM bookmarks b
     JOIN tweets t ON b.tweet_id = t.id
     JOIN profiles p ON t.author_id = p.id
@@ -879,10 +880,10 @@ export function listBookmarkTags(db: Database.Database, accountId = 'default'): 
 export function listBookmarkFolders(db: Database.Database, accountId = 'default'): string[] {
   const rows = db
     .prepare(`
-    SELECT DISTINCT folder_name FROM bookmarks WHERE account_id = ? AND folder_name != ''
+    SELECT DISTINCT folder_name AS folderName FROM bookmarks WHERE account_id = ? AND folder_name != ''
   `)
-    .all(accountId) as Array<{ folder_name: string }>;
-  return rows.map((r) => r.folder_name).sort();
+    .all(accountId) as Array<{ folderName: string }>;
+  return rows.map((r) => r.folderName).sort();
 }
 
 /** Get bookmark counts by priority. */
