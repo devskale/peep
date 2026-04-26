@@ -3,6 +3,7 @@ import { parsePaginationFlags } from '../cli/pagination.js';
 import type { CliContext } from '../cli/shared.js';
 import { cacheTweets } from '../lib/cache-helpers.js';
 import { formatStatsLine } from '../lib/output.js';
+import { renderMarkdown, renderPlainText } from '../lib/tweet-render.js';
 import { TwitterClient } from '../lib/twitter-client.js';
 
 export function registerReadCommands(program: Command, ctx: CliContext): void {
@@ -12,41 +13,52 @@ export function registerReadCommands(program: Command, ctx: CliContext): void {
     .argument('<tweet-id-or-url>', 'Tweet ID or URL to read')
     .option('--json', 'Output as JSON')
     .option('--json-full', 'Output as JSON with full raw API response in _raw field')
-    .action(async (tweetIdOrUrl: string, cmdOpts: { json?: boolean; jsonFull?: boolean }) => {
-      const opts = program.opts();
-      const timeoutMs = ctx.resolveTimeoutFromOptions(opts);
-      const quoteDepth = ctx.resolveQuoteDepthFromOptions(opts);
+    .option('--render', 'Render tweet with entity-aware formatting (mentions, URLs, hashtags)')
+    .option('--markdown', 'Render tweet as markdown with clickable links')
+    .action(
+      async (
+        tweetIdOrUrl: string,
+        cmdOpts: { json?: boolean; jsonFull?: boolean; render?: boolean; markdown?: boolean },
+      ) => {
+        const opts = program.opts();
+        const timeoutMs = ctx.resolveTimeoutFromOptions(opts);
+        const quoteDepth = ctx.resolveQuoteDepthFromOptions(opts);
 
-      const tweetId = ctx.extractTweetId(tweetIdOrUrl);
+        const tweetId = ctx.extractTweetId(tweetIdOrUrl);
 
-      const { cookies, warnings } = await ctx.resolveCredentialsFromOptions(opts);
+        const { cookies, warnings } = await ctx.resolveCredentialsFromOptions(opts);
 
-      for (const warning of warnings) {
-        console.error(`${ctx.p('warn')}${warning}`);
-      }
-
-      if (!cookies.authToken || !cookies.ct0) {
-        console.error(`${ctx.p('err')}Missing required credentials`);
-        process.exit(1);
-      }
-
-      const client = new TwitterClient({ cookies, timeoutMs, quoteDepth });
-      const includeRaw = cmdOpts.jsonFull ?? false;
-      const result = await client.getTweet(tweetId, { includeRaw });
-
-      if (result.success && result.tweet) {
-        cacheTweets([result.tweet]);
-        if (cmdOpts.json || cmdOpts.jsonFull) {
-          console.log(JSON.stringify(result.tweet, null, 2));
-        } else {
-          ctx.printTweets([result.tweet], { showSeparator: false });
-          console.log(formatStatsLine(result.tweet, ctx.getOutput()));
+        for (const warning of warnings) {
+          console.error(`${ctx.p('warn')}${warning}`);
         }
-      } else {
-        console.error(`${ctx.p('err')}Failed to read tweet: ${result.error}`);
-        process.exit(1);
-      }
-    });
+
+        if (!cookies.authToken || !cookies.ct0) {
+          console.error(`${ctx.p('err')}Missing required credentials`);
+          process.exit(1);
+        }
+
+        const client = new TwitterClient({ cookies, timeoutMs, quoteDepth });
+        const includeRaw = cmdOpts.jsonFull ?? false;
+        const result = await client.getTweet(tweetId, { includeRaw });
+
+        if (result.success && result.tweet) {
+          cacheTweets([result.tweet]);
+          if (cmdOpts.json || cmdOpts.jsonFull) {
+            console.log(JSON.stringify(result.tweet, null, 2));
+          } else if (cmdOpts.markdown) {
+            console.log(renderMarkdown(result.tweet.text, result.tweet.entities));
+          } else if (cmdOpts.render) {
+            console.log(renderPlainText(result.tweet.text, result.tweet.entities));
+          } else {
+            ctx.printTweets([result.tweet], { showSeparator: false });
+            console.log(formatStatsLine(result.tweet, ctx.getOutput()));
+          }
+        } else {
+          console.error(`${ctx.p('err')}Failed to read tweet: ${result.error}`);
+          process.exit(1);
+        }
+      },
+    );
 
   program
     .command('replies')

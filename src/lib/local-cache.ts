@@ -359,6 +359,88 @@ export function storeUser(db: Database.Database, user: TwitterUser): void {
 }
 
 // ---------------------------------------------------------------------------
+// Profile lookup helpers (birdclaw-inspired profile → X mapping)
+// ---------------------------------------------------------------------------
+
+/** Look up a cached profile by X user ID. */
+export function getProfileById(db: Database.Database, profileId: string): TwitterUser | null {
+  const row = db
+    .prepare(
+      'SELECT id, username, name, description, followers_count, following_count, is_blue_verified, profile_image_url, created_at FROM profiles WHERE id = ?',
+    )
+    .get(profileId) as Record<string, unknown> | undefined;
+  if (!row) {
+    return null;
+  }
+  return {
+    id: String(row.id),
+    username: String(row.username),
+    name: String(row.name),
+    description: row.description ? String(row.description) : undefined,
+    followersCount: Number(row.followers_count) || undefined,
+    followingCount: Number(row.following_count) || undefined,
+    isBlueVerified: Boolean(row.is_blue_verified),
+    profileImageUrl: row.profile_image_url ? String(row.profile_image_url) : undefined,
+    createdAt: row.created_at ? String(row.created_at) : undefined,
+  };
+}
+
+/** Look up a cached profile by handle (with or without @). */
+export function getProfileByUsername(db: Database.Database, username: string): TwitterUser | null {
+  const handle = username.replace(AT_PREFIX_REGEX, '');
+  const row = db
+    .prepare(
+      'SELECT id, username, name, description, followers_count, following_count, is_blue_verified, profile_image_url, created_at FROM profiles WHERE username = ?',
+    )
+    .get(handle) as Record<string, unknown> | undefined;
+  if (!row) {
+    return null;
+  }
+  return {
+    id: String(row.id),
+    username: String(row.username),
+    name: String(row.name),
+    description: row.description ? String(row.description) : undefined,
+    followersCount: Number(row.followers_count) || undefined,
+    followingCount: Number(row.following_count) || undefined,
+    isBlueVerified: Boolean(row.is_blue_verified),
+    profileImageUrl: row.profile_image_url ? String(row.profile_image_url) : undefined,
+    createdAt: row.created_at ? String(row.created_at) : undefined,
+  };
+}
+
+/** Ensure a profile exists in the cache (create stub if missing). */
+export function ensureProfile(db: Database.Database, id: string, username: string, name?: string): TwitterUser {
+  const existing = getProfileById(db, id);
+  if (existing) {
+    return existing;
+  }
+  storeUser(db, { id, username, name: name ?? username });
+  return { id, username, name: name ?? username };
+}
+
+/** Search profiles by partial username match. */
+export function searchProfiles(db: Database.Database, query: string, limit = 20): TwitterUser[] {
+  const handle = query.replace(AT_PREFIX_REGEX, '');
+  const rows = db
+    .prepare(
+      'SELECT id, username, name, description, followers_count, following_count, is_blue_verified, profile_image_url, created_at FROM profiles WHERE username LIKE ? OR name LIKE ? LIMIT ?',
+    )
+    .all(`${handle}%`, `%${handle}%`, limit) as Record<string, unknown>[];
+  return rows.map((row) => ({
+    id: String(row.id),
+    username: String(row.username),
+    name: String(row.name),
+    description: row.description ? String(row.description) : undefined,
+    followersCount: Number(row.followers_count) || undefined,
+    followingCount: Number(row.following_count) || undefined,
+    isBlueVerified: Boolean(row.is_blue_verified),
+    profileImageUrl: row.profile_image_url ? String(row.profile_image_url) : undefined,
+    createdAt: row.created_at ? String(row.created_at) : undefined,
+  }));
+}
+
+// ---------------------------------------------------------------------------
 // Row → TweetData conversion
 // ---------------------------------------------------------------------------
 
