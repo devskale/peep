@@ -282,6 +282,8 @@ export interface TweetData {
     title: string;
     previewText?: string;
   };
+  // Structured entities (mentions, URLs, hashtags) from GraphQL
+  entities?: import('./tweet-render.js').TweetEntities;
   // Raw GraphQL tweet result (only when includeRaw is enabled)
   _raw?: GraphqlTweetResult;
 }

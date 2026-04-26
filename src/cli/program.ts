@@ -1,15 +1,22 @@
 import { Command } from 'commander';
+import { registerArchiveCommands } from '../commands/archive.js';
+import { registerBlockMuteCommands } from '../commands/blocks.js';
 import { registerBookmarksCommand } from '../commands/bookmarks.js';
+import { registerCacheCommand } from '../commands/cache.js';
 import { registerCheckCommand } from '../commands/check.js';
 import { registerFollowCommands } from '../commands/follow.js';
 import { registerHelpCommand } from '../commands/help.js';
 import { registerHomeCommand } from '../commands/home.js';
+import { registerInboxCommand } from '../commands/inbox.js';
 import { registerListsCommand } from '../commands/lists.js';
+import { registerLocalSearchCommand } from '../commands/local-search.js';
 import { registerNewsCommand } from '../commands/news.js';
 import { registerPostCommands } from '../commands/post.js';
+import { registerProfileCommands } from '../commands/profile.js';
 import { registerQueryIdsCommand } from '../commands/query-ids.js';
 import { registerReadCommands } from '../commands/read.js';
 import { registerSearchCommands } from '../commands/search.js';
+import { registerStarredCommands } from '../commands/starred.js';
 import { registerUnbookmarkCommand } from '../commands/unbookmark.js';
 import { registerUserTweetsCommand } from '../commands/user-tweets.js';
 import { registerUserCommands } from '../commands/users.js';
@@ -32,6 +39,18 @@ export const KNOWN_COMMANDS = new Set([
   'following',
   'followers',
   'likes',
+  'blocks',
+  'mutes',
+  'ban',
+  'unban',
+  'mute',
+  'unmute',
+  'archive',
+  'local-search',
+  'inbox',
+  'starred',
+  'cache',
+  'profile',
   'lists',
   'list-timeline',
   'home',
@@ -132,12 +151,22 @@ export function createProgram(ctx: CliContext): Command {
     .option('--quote-depth <depth>', 'Max quoted tweet depth (default: 1; 0 disables)')
     .option('--plain', 'Plain output (stable, no emoji, no color)')
     .option('--no-emoji', 'Disable emoji output')
-    .option('--no-color', 'Disable ANSI colors (or set NO_COLOR)');
+    .option('--no-color', 'Disable ANSI colors (or set NO_COLOR)')
+    .option('--allow-write', 'Enable write commands (tweet, reply). Disabled by default.')
+    .option('--render', 'Render tweets with expanded URLs and clean mentions/hashtags')
+    .option('--markdown', 'Render tweets as markdown with clickable links');
 
   program.hook('preAction', (_thisCommand, actionCommand) => {
     ctx.applyOutputFromCommand(actionCommand);
   });
 
+  registerArchiveCommands(program, ctx);
+  registerBlockMuteCommands(program, ctx);
+  registerCacheCommand(program, ctx);
+  registerInboxCommand(program, ctx);
+  registerProfileCommands(program, ctx);
+  registerLocalSearchCommand(program, ctx);
+  registerStarredCommands(program, ctx);
   registerHelpCommand(program, ctx);
   registerQueryIdsCommand(program, ctx);
   registerPostCommands(program, ctx);

@@ -1,5 +1,6 @@
 import type { Command } from 'commander';
 import type { CliContext } from '../cli/shared.js';
+import { cacheTweets, cacheUsers } from '../lib/cache-helpers.js';
 import { normalizeHandle } from '../lib/normalize-handle.js';
 import { TwitterClient } from '../lib/twitter-client.js';
 import type { AboutAccountProfile, TwitterUser } from '../lib/twitter-client-types.js';
@@ -170,6 +171,7 @@ async function runUserListCommand(
         console.error(`${ctx.p('info')}Next cursor: ${nextCursor}`);
       }
       printUsers(allUsers, ctx);
+      cacheUsers(allUsers);
     }
 
     return;
@@ -177,6 +179,7 @@ async function runUserListCommand(
 
   const result = await spec.fetch(client, userId, count, cmdOpts.cursor);
   if (result.success && result.users) {
+    cacheUsers(result.users);
     if (cmdOpts.json) {
       if (usePagination) {
         console.log(JSON.stringify({ users: result.users, nextCursor: result.nextCursor ?? null }, null, 2));
@@ -283,6 +286,7 @@ export function registerUserCommands(program: Command, ctx: CliContext): void {
           : await client.getLikes(count, timelineOptions);
 
         if (result.success) {
+          cacheTweets(result.tweets ?? []);
           const isJson = Boolean(cmdOpts.json || cmdOpts.jsonFull);
           ctx.printTweetsResult(result, {
             json: isJson,

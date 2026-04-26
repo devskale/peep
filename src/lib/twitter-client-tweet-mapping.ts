@@ -1,3 +1,4 @@
+import { extractEntities, type RawLegacyEntities } from './tweet-render.js';
 import { extractArticleMetadata, extractMedia, extractTweetText } from './twitter-client-content-state.js';
 import type { GraphqlTweetResult, TweetData, TwitterUser } from './twitter-client-types.js';
 
@@ -49,6 +50,7 @@ export function mapTweetResult(
 
   const media = extractMedia(result);
   const article = extractArticleMetadata(result);
+  const entities = extractEntities(result.legacy?.entities as RawLegacyEntities | undefined);
 
   const tweetData: TweetData = {
     id: result.rest_id,
@@ -67,6 +69,7 @@ export function mapTweetResult(
     quotedTweet,
     media,
     article,
+    entities,
   };
 
   if (includeRaw) {

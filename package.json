@@ -1,6 +1,6 @@
 {
   "name": "@devskale/peep",
-  "version": "0.8.3",
+  "version": "0.9.0",
   "description": "CLI tool for consuming Twitter/X via GraphQL API",
   "type": "module",
   "main": "dist/index.js",
@@ -17,7 +17,7 @@
   "scripts": {
     "build": "pnpm run build:dist && pnpm run build:binary",
     "build:dist": "tsc && node scripts/copy-dist-assets.js",
-    "build:binary": "PEEP_VERSION=$(node -p \"require('./package.json').version\") PEEP_GIT_SHA=$(git rev-parse --short=8 HEAD 2>/dev/null || true) bun build --compile --minify --env=PEEP_* src/cli.ts --outfile peep",
+    "build:binary": "PEEP_VERSION=$(node -p \"require('./package.json').version\") PEEP_GIT_SHA=$(git rev-parse --short=8 HEAD 2>/dev/null || true) bun build --compile --minify --external=better-sqlite3 --env=PEEP_* src/cli.ts --outfile peep",
     "dev": "tsx src/index.ts",
     "peep": "pnpm run build:dist && node dist/cli.js",
     "test": "vitest run",
@@ -36,6 +36,7 @@
   },
   "dependencies": {
     "@steipete/sweet-cookie": "0.1.0",
+    "better-sqlite3": "^12.9.0",
     "commander": "^14.0.2",
     "json5": "^2.2.3",
     "kleur": "^4.1.5"
@@ -43,10 +44,14 @@
   "pnpm": {
     "patchedDependencies": {
       "@steipete/sweet-cookie": "patches/@steipete__sweet-cookie.patch"
-    }
+    },
+    "onlyBuiltDependencies": [
+      "better-sqlite3"
+    ]
   },
   "devDependencies": {
     "@biomejs/biome": "^2.3.10",
+    "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^25.0.3",
     "@vitest/coverage-v8": "4.0.16",
     "oxlint": "^1.36.0",

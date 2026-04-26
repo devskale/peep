@@ -14,6 +14,8 @@ and anti-bot behavior at any time - **expect this to break without notice**.
 **Strong recommendation: Do not use peep to tweet. You will hit blocks very quickly. Use it to read tweets.
 Bots are not welcome on X/Twitter. If you absolutely have to, use browser automation instead, or pay for the Twitter API to create tweets.**
 
+> **Note:** Write commands (`tweet`, `reply`, `follow`, `unfollow`, `unbookmark`) are **disabled by default**. Use `--allow-write` flag, `PEEP_ALLOW_WRITE=1` env var, or set `allowWrite: true` in your config to enable them.
+
 ## Documentation
 
 - **[Architecture](docs/ARCHITECTURE.md)** - How peep works internally (GraphQL API, query ID discovery, authentication, request flow)
@@ -178,10 +180,99 @@ Fields:
 - `locationAccurate`
 - `learnMoreUrl`
 
+## Local Cache & Offline Features
+
+peep stores fetched tweets, profiles, bookmarks, and more in a local SQLite database at `~/.peep/cache.db`. This enables offline search, bookmark management, and AI inbox scoring.
+
+```bash
+# Inspect cache
+peep cache
+
+# Search locally cached tweets (offline, fast, FTS5)
+peep local-search "typescript"
+peep local-search "bug" --author @steipete --since 2025-01-01
+
+# Import your Twitter/X data export
+peep archive find
+peep archive import ~/Downloads/twitter-2025.zip
+```
+
+### Cache location
+
+Default: `~/.peep/cache.db`. Override with `PEEP_CACHE_DIR`.
+
+All read commands (`home`, `search`, `bookmarks`, `likes`, `user-tweets`, `read`, `mentions`, `following`, `followers`) silently populate the cache. Cache operations never break live commands — they're best-effort.
+
+## Starred Bookmarks
+
+First-class bookmark management with personal metadata. Treat your bookmarks as "things I care about."
+
+```bash
+# List bookmarks with filters
+peep starred
+peep starred --unread --priority critical
+peep starred --tag "bug" --sort priority
+peep starred --search "typescript"
+
+# Add metadata
+peep starred note <tweet-id> "follow up on this"
+peep starred tag <tweet-id> "bug,idea,follow-up"
+peep starred priority <tweet-id> critical
+peep starred folder <tweet-id> "work"
+peep starred revisit <tweet-id>    # flag for later
+peep starred mark-read <tweet-id>
+peep starred unread <tweet-id>
+
+# Inspect
+peep starred tags               # list all tags
+peep starred folders            # list all folders
+peep starred stats              # priority distribution
+```
+
+Priority levels: `low` ⚪, `normal` 🟢, `high` 🟠, `critical` 🔴.
+
+## AI Inbox
+
+AI-ranked inbox for triaging mentions and DMs. Works with heuristic scoring by default, or with OpenAI for richer analysis.
+
+```bash
+# Show ranked inbox
+peep inbox
+
+# Score with OpenAI (requires OPENAI_API_KEY)
+peep inbox --score
+
+# Filter low-signal items
+peep inbox --hide-low-signal --min-score 60
+peep inbox --kind mentions -n 10
+```
+
+## Block & Mute Management
+
+Local-first blocklist and mutelist management.
+
+```bash
+peep blocks                          # list blocks
+peep blocks --add @username          # or: peep ban @username
+peep blocks --remove @username       # or: peep unban @username
+peep blocks --import-file list.txt   # handles/URLs, one per line
+
+peep mutes                           # list mutes
+peep mutes --add @username           # or: peep mute @username
+peep mutes --remove @username        # or: peep unmute @username
+```
+
+## Profile Inspection
+
+```bash
+# Scan a user's recent replies for bot/AI behavior
+peep profile replies @username -n 20
+```
+
 ## Commands
 
-- `peep tweet "<text>"` — post a new tweet.
-- `peep reply <tweet-id-or-url> "<text>"` — reply to a tweet using its ID or URL.
+- `peep tweet "<text>"` — post a new tweet (requires `--allow-write`).
+- `peep reply <tweet-id-or-url> "<text>"` — reply to a tweet using its ID or URL (requires `--allow-write`).
 - `peep help [command]` — show help (or help for a subcommand).
 - `peep query-ids [--fresh] [--json]` — inspect or refresh cached GraphQL query IDs.
 - `peep home [-n count] [--following] [--json] [--json-full]` — fetch your home timeline (For You) or Following feed.
@@ -204,6 +295,18 @@ Fields:
 - `peep about <@handle> [--json]` — get account origin and location information for a user.
 - `peep whoami` — print which Twitter account your cookies belong to.
 - `peep check` — show which credentials are available and where they were sourced from.
+- `peep cache [--json]` — show local cache statistics.
+- `peep local-search "<query>" [-n count] [--author handle] [--since date] [--until date] [--json]` — search locally cached tweets using FTS5.
+- `peep archive find [--json]` — find Twitter/X archive zip files on disk.
+- `peep archive import <path> [--json]` — import an archive zip into the local cache.
+- `peep starred [options]` — list managed bookmarks (see Starred Bookmarks section).
+- `peep starred note|tag|priority|folder|revisit|mark-read|unread|tags|folders|stats` — bookmark metadata subcommands.
+- `peep inbox [-n count] [--kind mentions|dm|mixed] [--score] [--hide-low-signal] [--min-score n] [--json]` — AI-ranked inbox.
+- `peep blocks [--add handle] [--remove handle] [--import-file path] [--json]` — manage local blocklist.
+- `peep mutes [--add handle] [--remove handle] [--json]` — manage local mutelist.
+- `peep ban <handle>` / `peep unban <handle>` — block/unblock aliases.
+- `peep mute <handle>` / `peep unmute <handle>` — mute/unmute aliases.
+- `peep profile replies <handle-or-id> [-n count] [--json]` — scan a user's recent replies for bot behavior.
 
 Bookmarks flags:
 - `--expand-root-only`: expand threads only when the bookmark is a root tweet.
@@ -216,6 +319,7 @@ Bookmarks flags:
 - `--sort-chronological`: sort output globally oldest to newest (default preserves bookmark order).
 
 Global options:
+- `--allow-write`: enable write commands (tweet, reply, follow, unfollow, unbookmark). Disabled by default.
 - `--auth-token <token>`: set the `auth_token` cookie manually.
 - `--ct0 <token>`: set the `ct0` cookie manually.
 - `--cookie-source <safari|chrome|firefox>`: choose browser cookie source (repeatable; order matters).
@@ -263,6 +367,8 @@ Example `~/.config/peep/config.json5`:
 
 ```json5
 {
+  // Enable write commands (tweet, reply, follow, unfollow, unbookmark)
+  allowWrite: true,
   // Cookie source order for browser extraction (string or array)
   cookieSource: ["firefox", "safari"],
   chromeProfileDir: "/path/to/Chromium/Profile",
@@ -274,9 +380,13 @@ Example `~/.config/peep/config.json5`:
 ```
 
 Environment shortcuts:
+- `PEEP_ALLOW_WRITE`
 - `PEEP_TIMEOUT_MS`
 - `PEEP_COOKIE_TIMEOUT_MS`
 - `PEEP_QUOTE_DEPTH`
+- `PEEP_CACHE_DIR` — override local cache directory (default: `~/.peep`)
+- `OPENAI_API_KEY` — required for AI inbox scoring
+- `PEEP_OPENAI_MODEL` — OpenAI model for inbox scoring (default: `gpt-4o-mini`)
 
 ## Output
 

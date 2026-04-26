@@ -105,14 +105,18 @@ function listErrorChecker(json: Record<string, unknown>): string | { message: st
 
   // Check if ALL errors are DecodeExceptions on non-essential paths
   const nonEssentialErrors = errors.filter((e: unknown) => {
-    if (typeof e !== 'object' || e === null) return false;
+    if (typeof e !== 'object' || e === null) {
+      return false;
+    }
     const err = e as Record<string, unknown>;
     const message = String(err.message ?? '');
     const path = err.path;
     // DecodeException on default_banner_media_results is non-essential
-    return message.includes('DecodeException') &&
+    return (
+      message.includes('DecodeException') &&
       Array.isArray(path) &&
-      path.some((p: unknown) => String(p).includes('default_banner_media_results'));
+      path.some((p: unknown) => String(p).includes('default_banner_media_results'))
+    );
   });
 
   // If all errors are non-essential DecodeExceptions, ignore them
@@ -123,9 +127,7 @@ function listErrorChecker(json: Record<string, unknown>): string | { message: st
   // Otherwise, report the errors normally
   const messages = errors
     .map((e: unknown) =>
-      typeof e === 'object' && e !== null && 'message' in e
-        ? String((e as { message: string }).message)
-        : undefined,
+      typeof e === 'object' && e !== null && 'message' in e ? String((e as { message: string }).message) : undefined,
     )
     .filter((m): m is string => typeof m === 'string');
   if (messages.length > 0) {
