@@ -698,6 +698,79 @@ This ensures `better-sqlite3`'s native compilation runs during `pnpm install` wh
 
 ---
 
+## Bug Fixes
+
+- **`upsertProfile()` parameter count mismatch** — INSERT listed 8 columns but only passed 7 values; the `description` placeholder was missing. Caused all `cacheTweets()` calls to silently fail (caught by try/catch in cache-helpers).
+- **SQL column alias mismatch** — better-sqlite3 returns raw column names from SQL; TypeScript type assertions don't transform keys. All SELECT queries returning to camelCase TypeScript interfaces needed explicit `AS` aliases. Affected `listBlocks()`, `listMutes()`, `listStoredBookmarks()`, and `listBookmarkFolders()`.
+
+## Live Testing
+
+Tested against a real X account with 31 bookmarks:
+
+| Command | Result |
+|---------|--------|
+| `peep bookmarks -n 40` | ✅ Fetched and cached all bookmarks |
+| `peep starred` | ✅ Listed with priority icons, flags |
+| `peep starred note <id> "..."` | ✅ |
+| `peep starred tag <id> "geo,finance"` | ✅ |
+| `peep starred priority <id> critical` | ✅ |
+| `peep starred folder <id> must-read` | ✅ |
+| `peep starred revisit <id>` | ✅ Toggle |
+| `peep starred mark-read <id>` | ✅ |
+| `peep starred --unread` | ✅ Filtered correctly |
+| `peep starred --sort priority` | ✅ Sorted critical→low |
+| `peep starred --folder must-read` | ✅ |
+| `peep starred --tag finance` | ✅ |
+| `peep starred stats` | ✅ Priority distribution |
+| `peep starred tags` | ✅ Listed all tags |
+| `peep starred folders` | ✅ Listed all folders |
+| `peep starred --json` | ✅ Proper camelCase JSON |
+| `peep cache` | ✅ Accurate counts |
+
+**Note:** The compiled bun binary cannot bundle `better-sqlite3` (native module). Cache/starred features require running via `node dist/cli.js`. Non-cache commands work in the binary.
+
+---
+
+## birdclaw Gap Analysis
+
+ birdclaw (steipete/birdclaw) was analyzed for feature inspiration. Here's what birdclaw has that peep does **not** yet implement:
+
+### ❌ Not implemented
+
+| Feature | birdclaw module | What it does |
+|---------|----------------|-------------|
+| **DMs** | `dms-live.ts` | Read, search, cache direct message conversations with threading |
+| **Live mentions sync** | `mentions-live.ts` | Fetches mentions via X's API with TTL-based caching, dedup, and reply-state tracking. Dual-transport (bird API + xurl) |
+| **Mentions export** | `mentions-export.ts` | Export mentions as structured markdown/plain text with reply state |
+| **Live block/mute transport** | `blocks-write.ts`, `mutes-write.ts`, `actions-transport.ts` | Execute blocks/mutes on X's API, not just local storage |
+| **Avatar caching** | `avatar-cache.ts` | Download and cache profile images locally with placeholder SVG generation |
+| **Profile hydration** | `profile-hydration.ts` | Bulk-fetch profile data from X for all cached profiles missing details |
+| **Moderation targets** | `moderation-target.ts` | Resolve mention authors to full profiles for moderation decisions |
+| **Sync cache** | `sync-cache.ts` | Generic key-value cache in SQLite with TTL for any API response |
+| **Rich timeline queries** | `queries.ts` (706 lines) | Full query engine — filtering by reply state, author, time ranges, entity types |
+| **Tweet rendering** | `tweet-render.ts` | Render tweets to markdown/plain text with entity handling |
+| **Profile → X mapping** | `x-profile.ts` | Bidirectional mapping between local profile IDs and X external user IDs |
+| **xurl transport** | `xurl.ts` (473 lines) | Alternative API transport using X's web endpoints (not GraphQL) |
+| **Seed data** | `seed.ts` | Realistic fake data for development/demo |
+
+### 🟡 Partially implemented
+
+| Feature | peep has | birdclaw adds |
+|---------|----------|-------------|
+| Mentions | Caches from `peep mentions` | Live fetch with TTL, dual-transport, export, reply tracking |
+| Blocks/mutes | Local-only storage | Live transport to X, dual-backend |
+| Profiles | Cached from follows/followers | Bulk hydration, avatar hue, X ID mapping |
+
+### Recommended priority for peep
+
+1. **DMs** — biggest feature gap, birdclaw's most unique capability
+2. **Sync cache + live mentions** — makes inbox useful without manual `peep mentions` runs
+3. **Live block/mute transport** — makes the blocklist real, not just local
+4. **Avatar caching** — nice for any future TUI/web UI
+5. **Mentions export** — useful for power users processing their inbox externally
+
+---
+
 ## Future Work
 
 1. **Tests for new commands** — `starred`, `blocks`, `cache`, `local-search`, `archive`, `inbox`, `profile` all need unit/integration tests
