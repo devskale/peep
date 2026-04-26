@@ -152,7 +152,9 @@ export function createProgram(ctx: CliContext): Command {
     .option('--plain', 'Plain output (stable, no emoji, no color)')
     .option('--no-emoji', 'Disable emoji output')
     .option('--no-color', 'Disable ANSI colors (or set NO_COLOR)')
-    .option('--allow-write', 'Enable write commands (tweet, reply). Disabled by default.');
+    .option('--allow-write', 'Enable write commands (tweet, reply). Disabled by default.')
+    .option('--render', 'Render tweets with expanded URLs and clean mentions/hashtags')
+    .option('--markdown', 'Render tweets as markdown with clickable links');
 
   program.hook('preAction', (_thisCommand, actionCommand) => {
     ctx.applyOutputFromCommand(actionCommand);

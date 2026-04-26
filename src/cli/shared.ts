@@ -14,7 +14,10 @@ import {
   resolveOutputConfigFromCommander,
   statusPrefix,
 } from '../lib/output.js';
+import { renderMarkdown, renderPlainText } from '../lib/tweet-render.js';
 import type { TweetData } from '../lib/twitter-client.js';
+
+export type RenderMode = 'default' | 'plain' | 'markdown';
 
 export type PeepConfig = {
   chromeProfile?: string;
@@ -50,6 +53,7 @@ export type CliContext = {
   applyOutputFromCommand: (command: Command) => void;
   resolveTimeoutFromOptions: (options: { timeout?: string | number }) => number | undefined;
   resolveQuoteDepthFromOptions: (options: { quoteDepth?: string | number }) => number | undefined;
+  resolveRenderModeFromOptions: (options: { render?: boolean; markdown?: boolean }) => RenderMode;
   resolveCredentialsFromOptions: (opts: CredentialsOptions) => ReturnType<typeof resolveCredentials>;
   resolveAllowWrite: (options: { allowWrite?: boolean }) => boolean;
   loadMedia: (opts: { media: string[]; alts: string[] }) => MediaSpec[];
@@ -186,6 +190,7 @@ type CredentialsOptions = {
 export function createCliContext(normalizedArgs: string[], env: NodeJS.ProcessEnv = process.env): CliContext {
   const isTty = process.stdout.isTTY;
   let output: OutputConfig = resolveOutputConfigFromArgv(normalizedArgs, env, isTty);
+  let renderMode: RenderMode = 'default';
   kleur.enabled = output.color;
 
   const wrap =
@@ -263,8 +268,15 @@ export function createCliContext(normalizedArgs: string[], env: NodeJS.ProcessEn
   });
 
   function applyOutputFromCommand(command: Command): void {
-    const opts = command.optsWithGlobals() as { plain?: boolean; emoji?: boolean; color?: boolean };
+    const opts = command.optsWithGlobals() as {
+      plain?: boolean;
+      emoji?: boolean;
+      color?: boolean;
+      render?: boolean;
+      markdown?: boolean;
+    };
     output = resolveOutputConfigFromCommander(opts, env, isTty);
+    renderMode = resolveRenderModeFromOptions(opts);
     kleur.enabled = output.color;
   }
 
@@ -278,6 +290,16 @@ export function createCliContext(normalizedArgs: string[], env: NodeJS.ProcessEn
 
   function resolveQuoteDepthFromOptions(options: { quoteDepth?: string | number }): number | undefined {
     return resolveQuoteDepth(options.quoteDepth, config.quoteDepth, env.PEEP_QUOTE_DEPTH);
+  }
+
+  function resolveRenderModeFromOptions(options: { render?: boolean; markdown?: boolean }): RenderMode {
+    if (options.markdown) {
+      return 'markdown';
+    }
+    if (options.render) {
+      return 'plain';
+    }
+    return 'default';
   }
 
   function resolveAllowWrite(options: { allowWrite?: boolean }): boolean {
@@ -375,7 +397,13 @@ export function createCliContext(normalizedArgs: string[], env: NodeJS.ProcessEn
           }
         }
       } else {
-        console.log(tweet.text);
+        console.log(
+          renderMode === 'markdown'
+            ? renderMarkdown(tweet.text, tweet.entities)
+            : renderMode === 'plain'
+              ? renderPlainText(tweet.text, tweet.entities)
+              : tweet.text,
+        );
       }
 
       // Display media attachments
@@ -390,7 +418,11 @@ export function createCliContext(normalizedArgs: string[], env: NodeJS.ProcessEn
         console.log(`${quotePrefix.top} QT @${tweet.quotedTweet.author.username}:`);
         const qtText = tweet.quotedTweet.article
           ? `${articleLabel} ${tweet.quotedTweet.article.title}`
-          : tweet.quotedTweet.text;
+          : renderMode === 'markdown'
+            ? renderMarkdown(tweet.quotedTweet.text, tweet.quotedTweet.entities)
+            : renderMode === 'plain'
+              ? renderPlainText(tweet.quotedTweet.text, tweet.quotedTweet.entities)
+              : tweet.quotedTweet.text;
         // Indent and truncate quoted tweet text
         const maxLen = 280;
         const truncated = qtText.length > maxLen ? `${qtText.slice(0, maxLen)}...` : qtText;
@@ -441,6 +473,7 @@ export function createCliContext(normalizedArgs: string[], env: NodeJS.ProcessEn
     applyOutputFromCommand,
     resolveTimeoutFromOptions,
     resolveQuoteDepthFromOptions,
+    resolveRenderModeFromOptions,
     resolveCredentialsFromOptions,
     resolveAllowWrite,
     loadMedia,
