@@ -9,6 +9,12 @@ export function registerUnbookmarkCommand(program: Command, ctx: CliContext): vo
     .argument('<tweet-id-or-url...>', 'Tweet IDs or URLs to remove from bookmarks')
     .action(async (tweetIdOrUrls: string[]) => {
       const opts = program.opts();
+      if (!ctx.resolveAllowWrite(opts)) {
+        console.error(
+          `${ctx.p('err')}Write commands are disabled by default. Use --allow-write or set PEEP_ALLOW_WRITE=1 to enable.`,
+        );
+        process.exit(1);
+      }
       const timeoutMs = ctx.resolveTimeoutFromOptions(opts);
 
       const { cookies, warnings } = await ctx.resolveCredentialsFromOptions(opts);

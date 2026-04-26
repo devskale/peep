@@ -31,6 +31,12 @@ export function registerPostCommands(program: Command, ctx: CliContext): void {
     .argument('<text>', 'Tweet text')
     .action(async (text: string) => {
       const opts = program.opts();
+      if (!ctx.resolveAllowWrite(opts)) {
+        console.error(
+          `${ctx.p('err')}Write commands are disabled by default. Use --allow-write or set PEEP_ALLOW_WRITE=1 to enable.`,
+        );
+        process.exit(1);
+      }
       const timeoutMs = ctx.resolveTimeoutFromOptions(opts);
       const quoteDepth = ctx.resolveQuoteDepthFromOptions(opts);
       let media: MediaSpec[] = [];
@@ -76,6 +82,12 @@ export function registerPostCommands(program: Command, ctx: CliContext): void {
     .argument('<text>', 'Reply text')
     .action(async (tweetIdOrUrl: string, text: string) => {
       const opts = program.opts();
+      if (!ctx.resolveAllowWrite(opts)) {
+        console.error(
+          `${ctx.p('err')}Write commands are disabled by default. Use --allow-write or set PEEP_ALLOW_WRITE=1 to enable.`,
+        );
+        process.exit(1);
+      }
       const timeoutMs = ctx.resolveTimeoutFromOptions(opts);
       const quoteDepth = ctx.resolveQuoteDepthFromOptions(opts);
       let media: MediaSpec[] = [];

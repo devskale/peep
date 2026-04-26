@@ -2,6 +2,7 @@ import type { Command } from 'commander';
 import { parsePaginationFlags } from '../cli/pagination.js';
 import type { CliContext } from '../cli/shared.js';
 import { mentionsQueryFromUserOption, normalizeHandle } from '../lib/normalize-handle.js';
+import { cacheTweets, cacheUsers } from '../lib/cache-helpers.js';
 import { TwitterClient } from '../lib/twitter-client.js';
 
 export function registerSearchCommands(program: Command, ctx: CliContext): void {
@@ -69,6 +70,7 @@ export function registerSearchCommands(program: Command, ctx: CliContext): void 
           : await client.search(query, count, searchOptions);
 
         if (result.success) {
+          cacheTweets(result.tweets ?? []);
           const isJson = Boolean(cmdOpts.json || cmdOpts.jsonFull);
           ctx.printTweetsResult(result, {
             json: isJson,
@@ -133,6 +135,7 @@ export function registerSearchCommands(program: Command, ctx: CliContext): void 
       const result = await client.search(query, count, { includeRaw });
 
       if (result.success) {
+        cacheTweets(result.tweets);
         ctx.printTweets(result.tweets, {
           json: cmdOpts.json || cmdOpts.jsonFull,
           emptyMessage: 'No mentions found.',

@@ -1,5 +1,6 @@
 import type { Command } from 'commander';
 import type { CliContext } from '../cli/shared.js';
+import { cacheTweets } from '../lib/cache-helpers.js';
 import { TwitterClient } from '../lib/twitter-client.js';
 
 export function registerHomeCommand(program: Command, ctx: CliContext): void {
@@ -39,6 +40,7 @@ export function registerHomeCommand(program: Command, ctx: CliContext): void {
         : await client.getHomeTimeline(count, { includeRaw });
 
       if (result.success) {
+        cacheTweets(result.tweets);
         const feedType = cmdOpts.following ? 'Following' : 'For You';
         const emptyMessage = `No tweets found in ${feedType} timeline.`;
         const isJson = Boolean(cmdOpts.json || cmdOpts.jsonFull);

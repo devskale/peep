@@ -24,6 +24,7 @@ export type PeepConfig = {
   cookieTimeoutMs?: number;
   timeoutMs?: number;
   quoteDepth?: number;
+  allowWrite?: boolean;
 };
 
 export type MediaSpec = { path: string; alt?: string; mime: string; buffer: Buffer };
@@ -50,6 +51,7 @@ export type CliContext = {
   resolveTimeoutFromOptions: (options: { timeout?: string | number }) => number | undefined;
   resolveQuoteDepthFromOptions: (options: { quoteDepth?: string | number }) => number | undefined;
   resolveCredentialsFromOptions: (opts: CredentialsOptions) => ReturnType<typeof resolveCredentials>;
+  resolveAllowWrite: (options: { allowWrite?: boolean }) => boolean;
   loadMedia: (opts: { media: string[]; alts: string[] }) => MediaSpec[];
   printTweets: (tweets: TweetData[], opts?: { json?: boolean; emptyMessage?: string; showSeparator?: boolean }) => void;
   printTweetsResult: (
@@ -278,6 +280,13 @@ export function createCliContext(normalizedArgs: string[], env: NodeJS.ProcessEn
     return resolveQuoteDepth(options.quoteDepth, config.quoteDepth, env.PEEP_QUOTE_DEPTH);
   }
 
+  function resolveAllowWrite(options: { allowWrite?: boolean }): boolean {
+    if (options.allowWrite === true) return true;
+    if (env.PEEP_ALLOW_WRITE === '1' || env.PEEP_ALLOW_WRITE === 'true') return true;
+    if (config.allowWrite === true) return true;
+    return false;
+  }
+
   function resolveCredentialsFromOptions(opts: CredentialsOptions): ReturnType<typeof resolveCredentials> {
     const cookieSource = opts.cookieSource?.length
       ? opts.cookieSource
@@ -427,6 +436,7 @@ export function createCliContext(normalizedArgs: string[], env: NodeJS.ProcessEn
     resolveTimeoutFromOptions,
     resolveQuoteDepthFromOptions,
     resolveCredentialsFromOptions,
+    resolveAllowWrite,
     loadMedia,
     printTweets,
     printTweetsResult,

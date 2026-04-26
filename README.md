@@ -14,6 +14,8 @@ and anti-bot behavior at any time - **expect this to break without notice**.
 **Strong recommendation: Do not use peep to tweet. You will hit blocks very quickly. Use it to read tweets.
 Bots are not welcome on X/Twitter. If you absolutely have to, use browser automation instead, or pay for the Twitter API to create tweets.**
 
+> **Note:** Write commands (`tweet`, `reply`, `follow`, `unfollow`, `unbookmark`) are **disabled by default**. Use `--allow-write` flag, `PEEP_ALLOW_WRITE=1` env var, or set `allowWrite: true` in your config to enable them.
+
 ## Documentation
 
 - **[Architecture](docs/ARCHITECTURE.md)** - How peep works internally (GraphQL API, query ID discovery, authentication, request flow)
@@ -216,6 +218,7 @@ Bookmarks flags:
 - `--sort-chronological`: sort output globally oldest to newest (default preserves bookmark order).
 
 Global options:
+- `--allow-write`: enable write commands (tweet, reply, follow, unfollow, unbookmark). Disabled by default.
 - `--auth-token <token>`: set the `auth_token` cookie manually.
 - `--ct0 <token>`: set the `ct0` cookie manually.
 - `--cookie-source <safari|chrome|firefox>`: choose browser cookie source (repeatable; order matters).
@@ -263,6 +266,8 @@ Example `~/.config/peep/config.json5`:
 
 ```json5
 {
+  // Enable write commands (tweet, reply, follow, unfollow, unbookmark)
+  allowWrite: true,
   // Cookie source order for browser extraction (string or array)
   cookieSource: ["firefox", "safari"],
   chromeProfileDir: "/path/to/Chromium/Profile",
@@ -274,6 +279,7 @@ Example `~/.config/peep/config.json5`:
 ```
 
 Environment shortcuts:
+- `PEEP_ALLOW_WRITE`
 - `PEEP_TIMEOUT_MS`
 - `PEEP_COOKIE_TIMEOUT_MS`
 - `PEEP_QUOTE_DEPTH`

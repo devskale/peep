@@ -41,6 +41,12 @@ export function registerFollowCommands(program: Command, ctx: CliContext): void 
     .argument('<username-or-id>', 'Username (with or without @) or user ID to follow')
     .action(async (usernameOrId: string) => {
       const opts = program.opts();
+      if (!ctx.resolveAllowWrite(opts)) {
+        console.error(
+          `${ctx.p('err')}Write commands are disabled by default. Use --allow-write or set PEEP_ALLOW_WRITE=1 to enable.`,
+        );
+        process.exit(1);
+      }
       const timeoutMs = ctx.resolveTimeoutFromOptions(opts);
 
       const { cookies, warnings } = await ctx.resolveCredentialsFromOptions(opts);
@@ -80,6 +86,12 @@ export function registerFollowCommands(program: Command, ctx: CliContext): void 
     .argument('<username-or-id>', 'Username (with or without @) or user ID to unfollow')
     .action(async (usernameOrId: string) => {
       const opts = program.opts();
+      if (!ctx.resolveAllowWrite(opts)) {
+        console.error(
+          `${ctx.p('err')}Write commands are disabled by default. Use --allow-write or set PEEP_ALLOW_WRITE=1 to enable.`,
+        );
+        process.exit(1);
+      }
       const timeoutMs = ctx.resolveTimeoutFromOptions(opts);
 
       const { cookies, warnings } = await ctx.resolveCredentialsFromOptions(opts);

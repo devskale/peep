@@ -5,6 +5,7 @@ import { registerFollowCommands } from '../src/commands/follow.js';
 import { TwitterClient } from '../src/lib/twitter-client.js';
 
 const baseCtx = {
+  resolveAllowWrite: () => true,
   resolveTimeoutFromOptions: () => undefined,
   resolveCredentialsFromOptions: async () => ({
     cookies: { authToken: 'auth', ct0: 'ct0', cookieHeader: 'auth=auth; ct0=ct0' },
