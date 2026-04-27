@@ -27,7 +27,7 @@ import { isCacheAvailable } from './local-cache.js';
 // ---------------------------------------------------------------------------
 
 const _nativeRequire = createRequire(import.meta.url);
-const _BetterSqlite3: ((path: string) => Database.Database) | null = null;
+let _BetterSqlite3: ((path: string) => Database.Database) | null = null;
 
 function ensureMediaLoaded(): (path: string) => Database.Database {
   if (_BetterSqlite3) {
@@ -36,7 +36,8 @@ function ensureMediaLoaded(): (path: string) => Database.Database {
   if (!isCacheAvailable()) {
     throw new Error('Media cache requires better-sqlite3. Run: pnpm install');
   }
-  return _BetterSqlite3 as unknown as (path: string) => Database.Database;
+  _BetterSqlite3 = _nativeRequire('better-sqlite3') as unknown as (path: string) => Database.Database;
+  return _BetterSqlite3;
 }
 
 // ---------------------------------------------------------------------------

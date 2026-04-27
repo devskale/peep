@@ -35,3 +35,31 @@ export function cacheUsers(users: TwitterUser[]): void {
     // cache is optional
   }
 }
+
+/**
+ * Download images for tweets with photo media.
+ * Safe to call — silently no-ops if the DB or media cache is unavailable.
+ * Runs asynchronously and does not block the caller.
+ */
+export function cacheTweetMedia(tweets: TweetData[], cookieHeader: string): void {
+  // Fire and forget — don't block the command output
+  (async () => {
+    try {
+      const { cacheStarredMedia } = await import('./media-cache.js');
+      for (const tweet of tweets) {
+        if (!tweet.media || tweet.media.length === 0) {
+          continue;
+        }
+        const photoMedia = tweet.media
+          .filter((m) => m.type === 'photo' && m.url)
+          .map((m) => ({ type: m.type, url: m.url }));
+        if (photoMedia.length === 0) {
+          continue;
+        }
+        await cacheStarredMedia(tweet.id, photoMedia, cookieHeader);
+      }
+    } catch {
+      // media cache is optional
+    }
+  })();
+}

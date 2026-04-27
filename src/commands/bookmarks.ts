@@ -1,7 +1,7 @@
 import type { Command } from 'commander';
 import { parsePaginationFlags } from '../cli/pagination.js';
 import type { CliContext } from '../cli/shared.js';
-import { cacheTweets } from '../lib/cache-helpers.js';
+import { cacheTweetMedia, cacheTweets } from '../lib/cache-helpers.js';
 import { extractBookmarkFolderId } from '../lib/extract-bookmark-folder-id.js';
 import { getDb, recordBookmarks } from '../lib/local-cache.js';
 import { addThreadMetadata, filterAuthorChain, filterAuthorOnly, filterFullChain } from '../lib/thread-filters.js';
@@ -118,6 +118,8 @@ export function registerBookmarksCommand(program: Command, ctx: CliContext): voi
         }
 
         cacheTweets(bookmarks);
+        // Download images for bookmarked tweets (fire-and-forget)
+        cacheTweetMedia(bookmarks, cookies.cookieHeader || `auth_token=${cookies.authToken}; ct0=${cookies.ct0}`);
         // Record bookmarks in local cache for starred management
         try {
           const db = getDb();
