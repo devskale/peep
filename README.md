@@ -24,7 +24,7 @@ Bots are not welcome on X/Twitter. If you absolutely have to, use browser automa
 
 ```bash
 # Quick install (macOS / Linux x86_64)
-curl -sL https://skale.dev/peep/install.sh | sh
+curl -sL https://raw.githubusercontent.com/devskale/peep/main/scripts/install.sh | sh
 ```
 
 Or build from source:

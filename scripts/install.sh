@@ -21,7 +21,10 @@ case "$OS" in
         if [ "$ARCH" = "x86_64" ]; then
             BINARY_NAME="peep-linux-x64"
         elif [ "$ARCH" = "aarch64" ] || [ "$ARCH" = "arm64" ]; then
-            BINARY_NAME="peep-linux-arm64"
+            echo "${RED}No prebuilt binary for Linux arm64 yet (only macOS + Linux x64 are published).${NC}"
+            echo "${YELLOW}Build from source instead:${NC}"
+            echo "  git clone https://github.com/devskale/peep && cd peep && bun install && bun run build:binary"
+            exit 1
         else
             echo "${RED}Unsupported architecture: $ARCH${NC}"
             exit 1
@@ -56,8 +59,8 @@ BINARY_URL="https://github.com/devskale/peep/releases/download/${LATEST_TAG}/${B
 
 echo "${YELLOW}Downloading from: $BINARY_URL${NC}"
 
-# Download binary
-curl -sL "$BINARY_URL" -o "$INSTALL_DIR/peep"
+# Download binary (-f: fail loudly on HTTP errors instead of saving the error page)
+curl -fsL "$BINARY_URL" -o "$INSTALL_DIR/peep"
 chmod +x "$INSTALL_DIR/peep"
 
 echo "${GREEN}✓ Installed peep to $INSTALL_DIR/peep${NC}"

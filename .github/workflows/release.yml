@@ -30,9 +30,13 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
+      - name: Extract version
+        id: version
+        run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+
       - name: Build binary
         env:
-          PEEP_VERSION: ${{ github.ref_name }}
+          PEEP_VERSION: ${{ steps.version.outputs.version }}
           PEEP_GIT_SHA: ${{ github.sha }}
         run: |
           bun build --compile --minify --env=PEEP_* \
