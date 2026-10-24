@@ -7,6 +7,7 @@
 import type { Command } from 'commander';
 import type { CliContext } from '../cli/shared.js';
 import { getDb, type LocalSearchParams, searchLocalTweets } from '../lib/local-cache.js';
+import type { TweetData } from '../lib/twitter-client-types.js';
 
 export function registerLocalSearchCommand(program: Command, ctx: CliContext): void {
   program
@@ -35,7 +36,15 @@ export function registerLocalSearchCommand(program: Command, ctx: CliContext): v
           until: cmdOpts.until,
         };
 
-        const tweets = searchLocalTweets(db, params);
+        let tweets: TweetData[];
+        try {
+          tweets = searchLocalTweets(db, params);
+        } catch (error) {
+          console.error(
+            `${ctx.p('err')}Local search failed: ${error instanceof Error ? error.message : String(error)}`,
+          );
+          process.exit(1);
+        }
 
         if (isJson) {
           console.log(JSON.stringify(tweets, null, 2));

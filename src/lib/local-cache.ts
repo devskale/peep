@@ -71,7 +71,7 @@ function ensureLoaded(): (path: string) => Database.Database {
 const DEFAULT_CACHE_DIR = join(homedir(), '.peep');
 const DEFAULT_DB_NAME = 'cache.db';
 
-export function getCacheDir(env?: NodeJS.ProcessEnv): string {
+export function getCacheDir(env: NodeJS.ProcessEnv = process.env): string {
   return env?.PEEP_CACHE_DIR ?? DEFAULT_CACHE_DIR;
 }
 
@@ -214,22 +214,19 @@ function migrate(db: Database.Database): void {
       PRIMARY KEY (entity_kind, entity_id)
     );
 
-    -- FTS5 virtual tables
+    -- FTS5 virtual tables (standalone — plain INSERT/DELETE semantics;
+    -- external-content mode silently ignores DELETE and breaks rebuilds)
     CREATE VIRTUAL TABLE IF NOT EXISTS tweets_fts USING fts5(
       id UNINDEXED,
       text,
-      username,
-      content='tweets',
-      content_rowid='rowid'
+      username
     );
 
     CREATE VIRTUAL TABLE IF NOT EXISTS profiles_fts USING fts5(
       id UNINDEXED,
       username,
       name,
-      description,
-      content='profiles',
-      content_rowid='rowid'
+      description
     );
 
     -- Indexes
@@ -245,15 +242,12 @@ function migrate(db: Database.Database): void {
 
   // --- Incremental migrations for existing databases ---
   migrateAddColumns(db);
+  migrateFtsToStandalone(db);
 }
 
 /** Add new columns that were added after the initial schema. */
 function migrateAddColumns(db: Database.Database): void {
   const columns = db.prepare("PRAGMA table_info('bookmarks')").all() as Array<{ name: string }>;
-
-  // ---------------------------------------------------------------------------
-  // Tweet → DB helpers
-  // ---------------------------------------------------------------------------
 
   const existing = new Set(columns.map((c) => c.name));
 
@@ -277,11 +271,71 @@ function migrateAddColumns(db: Database.Database): void {
   }
 }
 
+/**
+ * Rebuild legacy external-content FTS5 tables as standalone ones.
+ *
+ * The original schema declared `content='tweets'` / `content='profiles'`, but
+ * the write paths did plain INSERTs (never the 'delete'/'rebuild' commands).
+ * External-content tables silently ignore plain DELETE, so re-fetched tweets
+ * accumulated duplicate index rows and search results duplicated. FTS tables
+ * are derived indexes — rebuilding them from the source tables is lossless.
+ */
+function migrateFtsToStandalone(db: Database.Database): void {
+  const legacyTables: Array<{ fts: string; columns: string; rebuild: string }> = [
+    {
+      fts: 'tweets_fts',
+      columns: 'id UNINDEXED, text, username',
+      rebuild: `INSERT INTO tweets_fts_new(id, text, username)
+                SELECT t.id, t.text, p.username
+                FROM tweets t JOIN profiles p ON t.author_id = p.id`,
+    },
+    {
+      fts: 'profiles_fts',
+      columns: 'id UNINDEXED, username, name, description',
+      rebuild: `INSERT INTO profiles_fts_new(id, username, name, description)
+                SELECT id, username, name, description FROM profiles`,
+    },
+  ];
+
+  for (const { fts, columns, rebuild } of legacyTables) {
+    const row = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?").get(fts) as
+      | { sql?: string }
+      | undefined;
+    if (!row?.sql || !LEGACY_FTS_CONTENT_REGEX.test(row.sql)) {
+      continue; // missing or already standalone
+    }
+
+    const newName = `${fts}_new`;
+    db.exec(`DROP TABLE IF EXISTS ${newName}`);
+    db.exec(`CREATE VIRTUAL TABLE ${newName} USING fts5(${columns})`);
+    db.exec(rebuild);
+    db.exec(`DROP TABLE ${fts}`);
+    db.exec(`ALTER TABLE ${newName} RENAME TO ${fts}`);
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Tweet → DB helpers
 // ---------------------------------------------------------------------------
 
 const AT_PREFIX_REGEX = /^@/;
+const LEGACY_FTS_CONTENT_REGEX = /content\s*=\s*'/;
+const WHITESPACE_RUN_REGEX = /\s+/;
+const DOUBLE_QUOTE_REGEX = /"/g;
+
+/**
+ * Sanitize a user query for FTS5 MATCH: each whitespace-separated token
+ * becomes a quoted phrase, so FTS syntax characters (" ' ( ) - ; : *) in the
+ * user's input are matched literally instead of throwing syntax errors.
+ */
+export function sanitizeFtsMatchQuery(query: string): string {
+  return query
+    .trim()
+    .split(WHITESPACE_RUN_REGEX)
+    .filter(Boolean)
+    .map((token) => `"${token.replace(DOUBLE_QUOTE_REGEX, '""')}"`)
+    .join(' ');
+}
 
 function profileKey(tweet: TweetData): string {
   return tweet.authorId ?? `@${tweet.author.username}`;
@@ -356,7 +410,8 @@ export function storeTweet(db: Database.Database, tweet: TweetData, source = 'li
     storeTweet(db, tweet.quotedTweet, source);
   }
 
-  // Update FTS
+  // Update FTS (delete first — upserts must not duplicate index rows)
+  db.prepare('DELETE FROM tweets_fts WHERE id = ?').run(tweet.id);
   db.prepare('INSERT INTO tweets_fts(id, text, username) VALUES (?, ?, ?)').run(
     tweet.id,
     tweet.text,
@@ -403,7 +458,8 @@ export function storeUser(db: Database.Database, user: TwitterUser): void {
     user.createdAt ?? null,
   );
 
-  db.prepare('INSERT OR IGNORE INTO profiles_fts(id, username, name, description) VALUES (?, ?, ?, ?)').run(
+  db.prepare('DELETE FROM profiles_fts WHERE id = ?').run(user.id);
+  db.prepare('INSERT INTO profiles_fts(id, username, name, description) VALUES (?, ?, ?, ?)').run(
     user.id,
     user.username,
     user.name,
@@ -579,8 +635,10 @@ export function searchLocalTweets(db: Database.Database, params: LocalSearchPara
   const values: unknown[] = [];
 
   if (params.query) {
-    // Use FTS5 for text search
-    sql = `
+    const ftsQuery = sanitizeFtsMatchQuery(params.query);
+    if (ftsQuery.length > 0) {
+      // Use FTS5 for text search
+      sql = `
       SELECT t.id, t.text, t.author_id, p.username, p.name as author_name,
              t.created_at, t.reply_count, t.retweet_count, t.like_count,
              t.conversation_id, t.in_reply_to_id,
@@ -591,9 +649,9 @@ export function searchLocalTweets(db: Database.Database, params: LocalSearchPara
       JOIN profiles p ON t.author_id = p.id
       LEFT JOIN tweet_media m ON m.tweet_id = t.id AND m.sort_order = 0
     `;
-    conditions.push('tweets_fts MATCH ?');
-    // FTS5 query: wrap in quotes for phrase search, or use AND/OR syntax
-    values.push(params.query);
+      conditions.push('tweets_fts MATCH ?');
+      values.push(ftsQuery);
+    }
   }
 
   if (params.author) {
