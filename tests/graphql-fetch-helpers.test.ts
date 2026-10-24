@@ -1,6 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { TwitterClient } from '../src/lib/twitter-client.js';
-import type { GqlFetchOptions, GqlResponseParser } from '../src/lib/twitter-client-base.js';
+import {
+  computeRateLimitDelayMs,
+  type GqlFetchOptions,
+  type GqlResponseParser,
+} from '../src/lib/twitter-client-base.js';
 import { type TwitterClientPrivate, validCookies } from './twitter-client-fixtures.js';
 
 // ---------------------------------------------------------------------------
@@ -272,6 +276,145 @@ describe('graphqlFetchWithRefresh', () => {
     if (!result.success) {
       expect(result.had404).toBe(true);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 429 rate-limit handling
+// ---------------------------------------------------------------------------
+
+describe('computeRateLimitDelayMs', () => {
+  it('honors Retry-After delta-seconds', () => {
+    expect(computeRateLimitDelayMs(0, '5')).toBe(5000);
+  });
+
+  it('honors Retry-After HTTP-date', () => {
+    const inThreeSeconds = new Date(Date.now() + 3000).toUTCString();
+    const delay = computeRateLimitDelayMs(0, inThreeSeconds);
+    expect(delay).toBeGreaterThanOrEqual(2000);
+    expect(delay).toBeLessThanOrEqual(3000);
+  });
+
+  it('caps Retry-After at 60s', () => {
+    expect(computeRateLimitDelayMs(0, '3600')).toBe(60_000);
+  });
+
+  it('falls back to exponential backoff with jitter', () => {
+    expect(computeRateLimitDelayMs(0, null)).toBeGreaterThanOrEqual(1000);
+    expect(computeRateLimitDelayMs(0, null)).toBeLessThanOrEqual(1200);
+    expect(computeRateLimitDelayMs(3, undefined)).toBeGreaterThanOrEqual(8000);
+    expect(computeRateLimitDelayMs(3, undefined)).toBeLessThanOrEqual(9600);
+  });
+
+  it('returns 0-delay for retry-after 0', () => {
+    expect(computeRateLimitDelayMs(0, '0')).toBe(0);
+  });
+});
+
+describe('429 rate-limit retry', () => {
+  const originalFetch = globalThis.fetch;
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  function stubSleep(client: TwitterClientPrivate): number[] {
+    const delays: number[] = [];
+    vi.spyOn(client, 'sleep' as never).mockImplementation((async (ms: number) => {
+      delays.push(ms);
+    }) as never);
+    return delays;
+  }
+
+  it('retries the same query ID after 429 and succeeds', async () => {
+    const client = createClient();
+    const delays = stubSleep(client);
+    let callCount = 0;
+    const requestedUrls: string[] = [];
+
+    globalThis.fetch = vi.fn(async (url) => {
+      requestedUrls.push(String(url));
+      callCount++;
+      if (callCount === 1) {
+        return new Response('Rate limited', { status: 429, headers: { 'retry-after': '0' } });
+      }
+      return new Response(JSON.stringify({ data: { value: 'after-429' } }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    }) as unknown as typeof fetch;
+
+    const result = await client.graphqlFetchWithRetry(makeOpts(), parseData);
+
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.value).toBe('after-429');
+    }
+    expect(callCount).toBe(2);
+    expect(delays).toEqual([0]);
+    // Same query ID retried, not the next one
+    expect(new Set(requestedUrls).size).toBe(1);
+  });
+
+  it('gives up after max retries and reports rate limiting', async () => {
+    const client = createClient();
+    stubSleep(client);
+
+    globalThis.fetch = vi.fn(async () => {
+      return new Response('Rate limited', { status: 429 });
+    }) as unknown as typeof fetch;
+
+    const result = await client.graphqlFetchWithRetry(makeOpts(), parseData);
+
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error).toContain('429');
+      expect(result.had404).toBe(false);
+    }
+    // 1 initial attempt + 2 retries
+    expect(globalThis.fetch).toHaveBeenCalledTimes(3);
+  });
+
+  it('does not try fallback query IDs or refresh when rate limited', async () => {
+    const client = createClient();
+    const refreshSpy = vi.spyOn(client, 'refreshQueryIds' as never);
+    stubSleep(client);
+    let callCount = 0;
+
+    globalThis.fetch = vi.fn(async () => {
+      callCount++;
+      return new Response('Rate limited', { status: 429 });
+    }) as unknown as typeof fetch;
+
+    const result = await client.graphqlFetchWithRefresh(makeOpts({ queryIds: ['id-a', 'id-b'] }), parseData);
+
+    expect(result.success).toBe(false);
+    // Retries only the first query ID (3 calls), never falls through to id-b,
+    // and never triggers a query-ID refresh (429 is not 404).
+    expect(callCount).toBe(3);
+    expect(refreshSpy).not.toHaveBeenCalled();
+  });
+
+  it('does not sleep when retry-after is 0 and succeeds immediately', async () => {
+    const client = createClient();
+    const delays = stubSleep(client);
+    let callCount = 0;
+
+    globalThis.fetch = vi.fn(async () => {
+      callCount++;
+      if (callCount === 1) {
+        return new Response('Rate limited', { status: 429, headers: { 'retry-after': '0' } });
+      }
+      return new Response(JSON.stringify({ data: { value: 'ok' } }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    }) as unknown as typeof fetch;
+
+    const result = await client.graphqlMutationWithRetry(makeOpts({ method: 'POST' }), parseData);
+
+    expect(result.success).toBe(true);
+    expect(delays).toEqual([0]);
   });
 });
 

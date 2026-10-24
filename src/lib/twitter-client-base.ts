@@ -65,6 +65,52 @@ export const defaultGqlErrorChecker: GqlErrorChecker = (json) => {
   return undefined;
 };
 
+// ---------------------------------------------------------------------------
+// 429 rate-limit retry policy
+// ---------------------------------------------------------------------------
+
+/** How many times a 429'd request is retried (per query ID) before giving up. */
+const RATE_LIMIT_MAX_RETRIES = 2;
+/** Base delay for exponential backoff when X sends no Retry-After header. */
+const RATE_LIMIT_BASE_DELAY_MS = 1000;
+/** Upper bound for any single wait (also caps huge Retry-After values). */
+const RATE_LIMIT_MAX_DELAY_MS = 60_000;
+/** ±Jitter factor applied on top of the exponential delay. */
+const RATE_LIMIT_JITTER_FACTOR = 0.2;
+
+const RETRY_AFTER_SECONDS_REGEX = /^\d+$/;
+
+/** Parse a Retry-After header (delta-seconds or HTTP-date) into milliseconds. */
+function parseRetryAfterMs(headerValue: string | null | undefined): number | undefined {
+  const header = headerValue?.trim();
+  if (!header) {
+    return undefined;
+  }
+  if (RETRY_AFTER_SECONDS_REGEX.test(header)) {
+    const seconds = Number(header);
+    return Number.isFinite(seconds) && seconds >= 0 ? seconds * 1000 : undefined;
+  }
+  const when = Date.parse(header);
+  return Number.isFinite(when) ? Math.max(0, when - Date.now()) : undefined;
+}
+
+/**
+ * Compute how long to wait before retrying a 429'd request.
+ *
+ * Honors X's `Retry-After` header when present (delta-seconds or HTTP-date),
+ * capped at {@link RATE_LIMIT_MAX_DELAY_MS}. Otherwise uses exponential
+ * backoff with jitter: ~1s, ~2s, ~4s …
+ */
+export function computeRateLimitDelayMs(attempt: number, retryAfterHeader?: string | null): number {
+  const retryAfterMs = parseRetryAfterMs(retryAfterHeader);
+  if (retryAfterMs !== undefined) {
+    return Math.min(retryAfterMs, RATE_LIMIT_MAX_DELAY_MS);
+  }
+  const exponential = RATE_LIMIT_BASE_DELAY_MS * 2 ** attempt;
+  const jitter = exponential * RATE_LIMIT_JITTER_FACTOR * Math.random();
+  return Math.min(exponential + jitter, RATE_LIMIT_MAX_DELAY_MS);
+}
+
 // biome-ignore lint/suspicious/noExplicitAny: TS mixin base constructor requirement.
 export type Constructor<T = object> = new (...args: any[]) => T;
 // biome-ignore lint/suspicious/noExplicitAny: TS mixin base constructor requirement.
@@ -245,48 +291,67 @@ export abstract class TwitterClientBase {
     let lastError: string | undefined;
     let had404 = false;
 
-    for (const queryId of queryIds) {
+    outer: for (const queryId of queryIds) {
       const url = `${TWITTER_API_BASE}/${queryId}/${operationName}${params.toString() ? `?${params.toString()}` : ''}`;
+      let rateLimitRetries = 0;
 
-      try {
-        const response = await this.fetchWithTimeout(url, {
-          method,
-          headers,
-          // For POST: body includes variables/features/queryId (mirrors what X's web client sends)
-          body: method === 'POST' ? (rawBody ?? JSON.stringify({ variables, features, queryId })) : undefined,
-        });
+      while (true) {
+        try {
+          const response = await this.fetchWithTimeout(url, {
+            method,
+            headers,
+            // For POST: body includes variables/features/queryId (mirrors what X's web client sends)
+            body: method === 'POST' ? (rawBody ?? JSON.stringify({ variables, features, queryId })) : undefined,
+          });
 
-        if (response.status === 404) {
-          had404 = true;
-          lastError = `HTTP 404`;
-          continue;
+          if (response.status === 429) {
+            // 429 is account-level: retrying a different query ID won't help,
+            // so retry the SAME ID with backoff, then give up entirely.
+            if (rateLimitRetries < RATE_LIMIT_MAX_RETRIES) {
+              const delayMs = computeRateLimitDelayMs(rateLimitRetries, response.headers.get('retry-after'));
+              rateLimitRetries += 1;
+              lastError = 'HTTP 429: rate limited by X';
+              await this.sleep(delayMs);
+              continue;
+            }
+            lastError = `HTTP 429: rate limited by X (gave up after ${RATE_LIMIT_MAX_RETRIES} retries)`;
+            break outer;
+          }
+
+          if (response.status === 404) {
+            had404 = true;
+            lastError = `HTTP 404`;
+            continue outer;
+          }
+
+          if (!response.ok) {
+            const text = await response.text();
+            return { success: false, error: `HTTP ${response.status}: ${text.slice(0, 200)}`, had404 };
+          }
+
+          const json = (await response.json()) as Record<string, unknown>;
+
+          // Check for GraphQL-level errors
+          const gqlError = errorChecker(json);
+          if (gqlError) {
+            const isObj = typeof gqlError === 'object' && gqlError !== null;
+            const message = isObj ? (gqlError as { message: string }).message : (gqlError as string);
+            const retry = isObj ? (gqlError as { retry: boolean }).retry : false;
+            return { success: false, error: message, had404: retry || had404 };
+          }
+
+          const parsed = parseResponse(json);
+          if (parsed !== undefined) {
+            return { success: true, data: parsed };
+          }
+
+          // Parser returned undefined — treat as error, try next query ID
+          lastError = `Could not parse response for ${operationName}`;
+          continue outer;
+        } catch (error) {
+          lastError = error instanceof Error ? error.message : String(error);
+          continue outer;
         }
-
-        if (!response.ok) {
-          const text = await response.text();
-          return { success: false, error: `HTTP ${response.status}: ${text.slice(0, 200)}`, had404 };
-        }
-
-        const json = (await response.json()) as Record<string, unknown>;
-
-        // Check for GraphQL-level errors
-        const gqlError = errorChecker(json);
-        if (gqlError) {
-          const isObj = typeof gqlError === 'object' && gqlError !== null;
-          const message = isObj ? (gqlError as { message: string }).message : (gqlError as string);
-          const retry = isObj ? (gqlError as { retry: boolean }).retry : false;
-          return { success: false, error: message, had404: retry || had404 };
-        }
-
-        const parsed = parseResponse(json);
-        if (parsed !== undefined) {
-          return { success: true, data: parsed };
-        }
-
-        // Parser returned undefined — treat as error
-        lastError = `Could not parse response for ${operationName}`;
-      } catch (error) {
-        lastError = error instanceof Error ? error.message : String(error);
       }
     }
 
